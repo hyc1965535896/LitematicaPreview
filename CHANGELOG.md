@@ -5,7 +5,7 @@
 ## Features
 
 - 完整简体中文界面：主界面、菜单、设置、对话框、安装器与错误信息全部汉化。
-- 材料清单支持按方块名称替换（调色板级替换，保留原方块的属性），替换后可导出新的 .litematic / .schem / .nbt / .snbt / .mcstructure 等格式。
+- 材料清单支持按方块名称替换（调色板级替换，保留原方块的属性；替换语义参考 DimasKama 的 [SchematicPreview](https://github.com/DimasKama/SchematicPreview) 模组），替换后可导出新的 .litematic / .schem / .nbt / .snbt / .mcstructure 等格式。
 - 图形化选块器：替换对话框改为游戏内 Litematica 风格的图标网格，全部 1106 种方块各自渲染等距 3D 图标（软件渲染，含草方块/树叶/水染色、动画贴图取帧、楼梯台阶等形状）；支持中文名或 id 搜索，悬浮提示显示"中文名 + minecraft:id"。
 - 空气以线框立方体呈现并保持可选，作为"删除方块"的替换目标（技术性的 cave_air / void_air 除外）。
 - 方块中文名对照（1088 个）提取自 Minecraft 26.x 官方 zh_cn 语言文件。

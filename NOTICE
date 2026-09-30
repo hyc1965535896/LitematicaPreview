@@ -3,6 +3,11 @@ Source baseline: 4bbeeae4ddfd5d4afa0280ba42f6a01bc8df7ab6.
 The source repository's LICENSE is GNU AGPL version 3 and is preserved.
 The source NOTICE described an older MIT license; this port follows LICENSE.
 
+The material-replacement feature models the behavior of the SchematicPreview
+mod by DimasKama (https://github.com/DimasKama/SchematicPreview). Only its
+replace semantics were reimplemented in Mesher/src/replace.rs; no source code
+was copied. SchematicPreview is proprietary ("All rights reserved").
+
 Nucleation and schematic-mesher power file decoding and meshing.
 Nucleation 0.10.14 is used unmodified from crates.io. Mesher/src/litematic.rs,
 Mesher/src/schematic.rs and Mesher/src/meshing.rs contain application-owned

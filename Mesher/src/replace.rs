@@ -1,8 +1,10 @@
-//! Palette-level material replacement ported from the SchematicPreview mod:
+//! Palette-level material replacement. The semantics model the
+//! SchematicPreview mod by DimasKama (https://github.com/DimasKama/SchematicPreview):
 //! every block state whose block name matches a rule is rewritten to the
 //! replacement block, copying the original state's properties verbatim.
 //! Loaders skip properties the replacement block does not define, which
 //! matches the mod's shared-property copying without a block registry.
+//! Only the behavior was reimplemented here; no code was taken from the mod.
 
 use nucleation::{BlockState, Region, UniversalSchematic};
 
