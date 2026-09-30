@@ -1,4 +1,5 @@
-use litematica_preview_native::PreviewOptions;
+use litematica_preview_native::{BlockReplacement, ExportFormat, PreviewOptions};
+use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -8,6 +9,28 @@ use std::time::{Duration, Instant};
 const TOKEN_BYTES: usize = 32;
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// One decoder-process request. Host and worker ship together, so the shape
+/// only needs to stay in sync inside this crate.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct DecoderRequest {
+    pub path: PathBuf,
+    pub pack_path: PathBuf,
+    pub chunk_size: Option<u16>,
+    pub thread_count: Option<u8>,
+    pub speed_first: bool,
+    #[serde(default)]
+    pub replacements: Vec<BlockReplacement>,
+    #[serde(default)]
+    pub export: Option<ExportRequest>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ExportRequest {
+    /// File extension (without the dot) selecting the export writer.
+    pub format: String,
+    pub destination: PathBuf,
+}
 
 pub struct DecoderProcess {
     child: Child,
@@ -28,16 +51,16 @@ impl DecoderProcess {
         }
         .validate()?;
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .map_err(|e| format!("Unable to create the decoder connection: {e}"))?;
+            .map_err(|e| format!("无法创建解码器连接：{e}"))?;
         listener
             .set_nonblocking(true)
-            .map_err(|e| format!("Unable to configure the decoder connection: {e}"))?;
+            .map_err(|e| format!("无法配置解码器连接：{e}"))?;
         let address = listener
             .local_addr()
-            .map_err(|e| format!("Unable to locate the decoder connection: {e}"))?;
+            .map_err(|e| format!("无法找到解码器连接：{e}"))?;
         let token = authentication_token()?;
         let executable = std::env::current_exe()
-            .map_err(|e| format!("Unable to locate the decoder executable: {e}"))?;
+            .map_err(|e| format!("无法找到解码器可执行文件：{e}"))?;
         let mut command = Command::new(executable);
         command
             .arg("--preview-worker")
@@ -56,7 +79,7 @@ impl DecoderProcess {
         let job = decoder_job(memory_limit_mb)?;
         let mut child = command
             .spawn()
-            .map_err(|e| format!("Unable to start the decoder process: {e}"))?;
+            .map_err(|e| format!("无法启动解码进程：{e}"))?;
         let input = child.stdin.take();
         let mut process = Self {
             child,
@@ -71,13 +94,13 @@ impl DecoderProcess {
         process
             .input
             .as_mut()
-            .ok_or("The decoder input pipe is unavailable.")?
+            .ok_or("解码器输入管道不可用。")?
             .write_all(&token)
             .and_then(|()| {
                 process
                     .input
                     .as_mut()
-                    .ok_or_else(|| io::Error::other("The decoder input pipe is unavailable"))?
+                    .ok_or_else(|| io::Error::other("解码器输入管道不可用"))?
                     .write_all(&memory_limit_mb.unwrap_or(0).to_le_bytes())
             })
             .map_err(|e| process.failure(e))?;
@@ -87,14 +110,14 @@ impl DecoderProcess {
             if let Some(status) = process
                 .child
                 .try_wait()
-                .map_err(|e| format!("Unable to inspect the decoder process: {e}"))?
+                .map_err(|e| format!("无法检查解码进程：{e}"))?
             {
                 return Err(format!(
-                    "The decoder process stopped during startup ({status})."
+                    "解码进程在启动期间停止（{status}）。"
                 ));
             }
             if Instant::now() >= deadline {
-                return Err("The decoder process did not connect within ten seconds.".into());
+                return Err("解码进程未能在十秒内连接。".into());
             }
             match listener.accept() {
                 Ok((mut stream, _)) => {
@@ -105,7 +128,7 @@ impl DecoderProcess {
                     stream
                         .set_nonblocking(false)
                         .and_then(|()| stream.set_read_timeout(Some(timeout)))
-                        .map_err(|e| format!("Unable to configure decoder authentication: {e}"))?;
+                        .map_err(|e| format!("无法配置解码器身份验证：{e}"))?;
                     let mut received = [0; TOKEN_BYTES];
                     if stream.read_exact(&mut received).is_err() || received != token {
                         continue;
@@ -113,14 +136,14 @@ impl DecoderProcess {
                     stream
                         .set_read_timeout(None)
                         .and_then(|()| stream.set_nodelay(true))
-                        .map_err(|e| format!("Unable to configure the decoder connection: {e}"))?;
+                        .map_err(|e| format!("无法配置解码器连接：{e}"))?;
                     process.stream = Some(stream);
                     return Ok(process);
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     std::thread::sleep(Duration::from_millis(10));
                 }
-                Err(error) => return Err(format!("Unable to connect to the decoder: {error}")),
+                Err(error) => return Err(format!("无法连接到解码器：{error}")),
             }
         }
     }
@@ -144,15 +167,20 @@ impl DecoderProcess {
         chunk_size: Option<u16>,
         thread_count: Option<u8>,
         speed_first: bool,
+        replacements: &[BlockReplacement],
         current: impl Fn() -> bool,
         on_progress: impl FnMut(u64, u64),
     ) -> Result<Result<crate::protocol::Payload, String>, String> {
         self.request(
-            path,
-            pack_path,
-            chunk_size,
-            thread_count,
-            speed_first,
+            DecoderRequest {
+                path: path.to_path_buf(),
+                pack_path: pack_path.to_path_buf(),
+                chunk_size,
+                thread_count,
+                speed_first,
+                replacements: replacements.to_vec(),
+                export: None,
+            },
             |stream| crate::protocol::receive(stream, current, on_progress),
         )
     }
@@ -164,39 +192,67 @@ impl DecoderProcess {
         chunk_size: Option<u16>,
         thread_count: Option<u8>,
         speed_first: bool,
+        replacements: &[BlockReplacement],
         current: impl Fn() -> bool,
         on_progress: impl FnMut(u64, u64),
         on_chunk: impl FnMut(usize, crate::protocol::Payload) -> Result<(), String>,
     ) -> Result<Result<crate::protocol::Metadata, String>, String> {
         self.request(
-            path,
-            pack_path,
-            chunk_size,
-            thread_count,
-            speed_first,
+            DecoderRequest {
+                path: path.to_path_buf(),
+                pack_path: pack_path.to_path_buf(),
+                chunk_size,
+                thread_count,
+                speed_first,
+                replacements: replacements.to_vec(),
+                export: None,
+            },
             |stream| crate::protocol::receive_stream(stream, current, on_progress, on_chunk),
+        )
+    }
+
+    /// Asks the decoder to write a replacement-applied copy of the schematic
+    /// to `destination` in `format`. Returns the exported block counts.
+    pub fn export(
+        &mut self,
+        path: &Path,
+        replacements: &[BlockReplacement],
+        format: &str,
+        destination: &Path,
+        current: impl Fn() -> bool,
+    ) -> Result<Result<crate::protocol::Summary, String>, String> {
+        self.request(
+            DecoderRequest {
+                path: path.to_path_buf(),
+                pack_path: PathBuf::new(),
+                chunk_size: None,
+                thread_count: None,
+                speed_first: false,
+                replacements: replacements.to_vec(),
+                export: Some(ExportRequest {
+                    format: format.to_string(),
+                    destination: destination.to_path_buf(),
+                }),
+            },
+            |stream| crate::protocol::receive_summary(stream, current),
         )
     }
 
     fn request<T>(
         &mut self,
-        path: &Path,
-        pack_path: &Path,
-        chunk_size: Option<u16>,
-        thread_count: Option<u8>,
-        speed_first: bool,
+        request: DecoderRequest,
         receive: impl FnOnce(&mut TcpStream) -> io::Result<Result<T, String>>,
     ) -> Result<Result<T, String>, String> {
-        let request = serde_json::to_vec(&(path, pack_path, chunk_size, thread_count, speed_first))
-            .map_err(|e| format!("Unable to describe the decoder request: {e}"))?;
-        if request.len() > MAX_REQUEST_BYTES {
-            return Ok(Err("The schematic or resource path is too long.".into()));
+        let bytes = serde_json::to_vec(&request)
+            .map_err(|e| format!("无法序列化解码器请求：{e}"))?;
+        if bytes.len() > MAX_REQUEST_BYTES {
+            return Ok(Err("投影文件或资源路径过长。".into()));
         }
         let result = (|| {
             let stream = self.stream.as_mut().ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotConnected, "The decoder is not connected")
+                io::Error::new(io::ErrorKind::NotConnected, "解码器未连接")
             })?;
-            write_frame(stream, &request)?;
+            write_frame(stream, &bytes)?;
             receive(stream)
         })();
         result.map_err(|error| self.failure(error))
@@ -211,7 +267,7 @@ impl DecoderProcess {
         };
         if assigned == 0 {
             return Err(format!(
-                "Unable to isolate the decoder process: {}",
+                "无法隔离解码进程：{}",
                 io::Error::last_os_error()
             ));
         }
@@ -225,12 +281,12 @@ impl DecoderProcess {
         loop {
             match self.child.try_wait() {
                 Ok(Some(status)) => {
-                    return format!("The decoder process stopped unexpectedly ({status}). The schematic could not be loaded.{}", process_limit_message(self.memory_limit_mb));
+                    return format!("解码进程意外停止（{status}），无法加载投影文件。{}", process_limit_message(self.memory_limit_mb));
                 }
                 Ok(None) if Instant::now() < deadline => {
                     std::thread::sleep(Duration::from_millis(10));
                 }
-                _ => return format!("The decoder connection failed: {error}"),
+                _ => return format!("解码器连接失败：{error}"),
             }
         }
     }
@@ -298,17 +354,17 @@ pub fn run(port: &std::ffi::OsStr) -> Result<(), String> {
         .to_str()
         .and_then(|value| value.parse().ok())
         .filter(|port| *port != 0)
-        .ok_or("Invalid decoder connection port.")?;
+        .ok_or("解码器连接端口无效。")?;
     let mut token = [0; TOKEN_BYTES];
     io::stdin()
         .read_exact(&mut token)
-        .map_err(|e| format!("Unable to read decoder authentication: {e}"))?;
+        .map_err(|e| format!("无法读取解码器身份验证信息：{e}"))?;
     // Accept the launch memory cap only from the inherited host pipe, never from
     // a request packet.
     let mut cap = [0; 2];
     io::stdin()
         .read_exact(&mut cap)
-        .map_err(|e| format!("Unable to read decoder memory settings: {e}"))?;
+        .map_err(|e| format!("无法读取解码器内存设置：{e}"))?;
     let memory_limit_mb = (u16::from_le_bytes(cap) != 0).then_some(u16::from_le_bytes(cap));
     PreviewOptions {
         memory_limit_mb,
@@ -329,35 +385,45 @@ pub fn run(port: &std::ffi::OsStr) -> Result<(), String> {
                 }
             }
         })
-        .map_err(|e| format!("Unable to monitor the preview host: {e}"))?;
+        .map_err(|e| format!("无法监视预览主机：{e}"))?;
     let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let mut stream = TcpStream::connect_timeout(&address, STARTUP_TIMEOUT)
-        .map_err(|e| format!("Unable to connect to the preview host: {e}"))?;
+        .map_err(|e| format!("无法连接到预览主机：{e}"))?;
     stream
         .set_nodelay(true)
         .and_then(|()| stream.write_all(&token))
-        .map_err(|e| format!("Unable to authenticate the decoder: {e}"))?;
+        .map_err(|e| format!("无法对解码器进行身份验证：{e}"))?;
     let mut pack = None;
     loop {
         let request = read_frame(&mut stream, MAX_REQUEST_BYTES)
-            .map_err(|e| format!("Unable to read the decoder request: {e}"))?;
-        let (path, pack_path, chunk_size, thread_count, speed_first): (
-            PathBuf,
-            PathBuf,
-            Option<u16>,
-            Option<u8>,
-            bool,
-        ) = serde_json::from_slice(&request)
-            .map_err(|e| format!("Invalid decoder request: {e}"))?;
+            .map_err(|e| format!("无法读取解码器请求：{e}"))?;
+        let request: DecoderRequest = serde_json::from_slice(&request)
+            .map_err(|e| format!("解码器请求无效：{e}"))?;
         let options = PreviewOptions {
             memory_limit_mb,
-            chunk_size,
-            thread_count,
-            speed_first,
+            chunk_size: request.chunk_size,
+            thread_count: request.thread_count,
+            speed_first: request.speed_first,
         };
-        let result = crate::preview::decode(&path, &pack_path, &mut pack, options, &mut stream);
+        let result = if let Some(export) = &request.export {
+            crate::preview::export_to_file(
+                &request.path,
+                &request.replacements,
+                &export.format,
+                &export.destination,
+            )
+        } else {
+            crate::preview::decode(
+                &request.path,
+                &request.pack_path,
+                &mut pack,
+                options,
+                &request.replacements,
+                &mut stream,
+            )
+        };
         crate::protocol::finish(&mut stream, result)
-            .map_err(|e| format!("Unable to send the decoder response: {e}"))?;
+            .map_err(|e| format!("无法发送解码器响应：{e}"))?;
     }
 }
 
@@ -366,12 +432,12 @@ fn read_frame(stream: &mut TcpStream, maximum: usize) -> io::Result<Vec<u8>> {
     stream.read_exact(&mut length)?;
     let length = u32::from_le_bytes(length) as usize;
     if length == 0 || length > maximum {
-        return Err(invalid_data("The decoder packet length is invalid"));
+        return Err(invalid_data("解码器数据包长度无效"));
     }
     let mut bytes = Vec::new();
     bytes
         .try_reserve_exact(length)
-        .map_err(|_| io::Error::other("There is not enough memory to receive this preview"))?;
+        .map_err(|_| io::Error::other("内存不足，无法接收此预览"))?;
     bytes.resize(length, 0);
     stream.read_exact(&mut bytes)?;
     Ok(bytes)
@@ -379,7 +445,7 @@ fn read_frame(stream: &mut TcpStream, maximum: usize) -> io::Result<Vec<u8>> {
 
 fn write_frame(stream: &mut TcpStream, bytes: &[u8]) -> io::Result<()> {
     let length =
-        u32::try_from(bytes.len()).map_err(|_| invalid_data("The decoder packet is too large"))?;
+        u32::try_from(bytes.len()).map_err(|_| invalid_data("解码器数据包过大"))?;
     stream.write_all(&length.to_le_bytes())?;
     stream.write_all(bytes)
 }
@@ -404,7 +470,7 @@ fn authentication_token() -> Result<[u8; TOKEN_BYTES], String> {
     };
     if status < 0 {
         return Err(format!(
-            "Unable to authenticate the decoder process (OS status {status})."
+            "无法验证解码进程（操作系统状态 {status}）。"
         ));
     }
     Ok(token)
@@ -415,7 +481,7 @@ fn authentication_token() -> Result<[u8; TOKEN_BYTES], String> {
     let mut token = [0; TOKEN_BYTES];
     std::fs::File::open("/dev/urandom")
         .and_then(|mut random| random.read_exact(&mut token))
-        .map_err(|e| format!("Unable to authenticate the decoder process: {e}"))?;
+        .map_err(|e| format!("无法验证解码进程：{e}"))?;
     Ok(token)
 }
 
@@ -432,7 +498,7 @@ fn decoder_job(memory_limit_mb: Option<u16>) -> Result<std::os::windows::io::Own
     let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
     if handle.is_null() {
         return Err(format!(
-            "Unable to create the decoder job: {}",
+            "无法创建解码器作业：{}",
             io::Error::last_os_error()
         ));
     }
@@ -443,7 +509,7 @@ fn decoder_job(memory_limit_mb: Option<u16>) -> Result<std::os::windows::io::Own
         limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
         limits.ProcessMemoryLimit = usize::from(mb)
             .checked_mul(1024 * 1024)
-            .ok_or("The decoder memory limit exceeds this platform's addressable memory.")?;
+            .ok_or("解码器内存上限超出了此平台可寻址的内存。")?;
     }
     let configured = unsafe {
         SetInformationJobObject(
@@ -455,7 +521,7 @@ fn decoder_job(memory_limit_mb: Option<u16>) -> Result<std::os::windows::io::Own
     };
     if configured == 0 {
         return Err(format!(
-            "Unable to configure decoder isolation: {}",
+            "无法配置解码器隔离：{}",
             io::Error::last_os_error()
         ));
     }
@@ -465,9 +531,9 @@ fn decoder_job(memory_limit_mb: Option<u16>) -> Result<std::os::windows::io::Own
 fn process_limit_message(memory_limit_mb: Option<u16>) -> String {
     match memory_limit_mb {
         Some(mb) if cfg!(windows) => {
-            format!(" Decoder memory was limited to {mb} MB; the exit alone cannot confirm whether that limit was reached.")
+            format!(" 解码器内存被限制为 {mb} MB；仅凭退出无法确认是否达到了该上限。")
         }
-        None => " The decoder memory limit is disabled.".into(),
+        None => " 解码器内存限制已停用。".into(),
         Some(_) => String::new(),
     }
 }

@@ -124,7 +124,7 @@ export class PreparedUploads {
     preceding: Promise<void> = Promise.resolve(),
   ) {
     if (!Number.isInteger(count) || count < 2 || count > 8)
-      throw new Error("Invalid preview worker count.")
+      throw new Error("预览工作线程数无效。")
     this.pages = pages
     this.read = read
     this.guard = guard
@@ -166,11 +166,11 @@ export class PreparedUploads {
     await Promise.race([this.started, this.cancelled])
     if (this.failure) throw this.failure
     this.guard()
-    if (this.held) throw new Error("The previous preview page has not been uploaded.")
+    if (this.held) throw new Error("上一个预览页面尚未上传。")
     const slot = this.slots[0]
     if (!slot) {
       if (this.ended) return null
-      throw new Error("The preview upload order is inconsistent.")
+      throw new Error("预览上传顺序不一致。")
     }
     const result = await slot.result
     if (this.failure) throw this.failure
@@ -184,7 +184,7 @@ export class PreparedUploads {
     if (this.failure) throw this.failure
     this.guard()
     const slot = this.held
-    if (!slot) throw new Error("No preview page is being uploaded.")
+    if (!slot) throw new Error("当前没有正在上传的预览页面。")
     this.held = null
     this.slots.shift()
     if (!this.ended) {
@@ -218,7 +218,7 @@ export class PreparedUploads {
       page.byteLength <= 0 ||
       page.byteLength > UPLOAD_CHUNK
     )
-      throw new Error("Invalid preview preparation page.")
+      throw new Error("预览准备页面无效。")
     let finish!: (result: Result) => void
     const result = new Promise<Result>((resolve) => {
       finish = resolve
@@ -266,7 +266,7 @@ export function validateUpload(buffer: ArrayBuffer, page: UploadPage): void {
     page.byteLength > UPLOAD_CHUNK ||
     !Number.isSafeInteger(page.payloadBytes)
   )
-    throw new Error("Invalid preview preparation page.")
+    throw new Error("预览准备页面无效。")
   let cursor = 0
   let payloadBytes = 0
   for (const slice of page.slices) {
@@ -279,18 +279,18 @@ export function validateUpload(buffer: ArrayBuffer, page: UploadPage): void {
       slice.length > UPLOAD_CHUNK ||
       slice.pageOffset + slice.length > page.byteLength
     )
-      throw new Error("Invalid preview preparation page.")
+      throw new Error("预览准备页面无效。")
     cursor = slice.pageOffset + slice.length
     payloadBytes += slice.length
     if (slice.validation === "float32") {
       if (slice.length % 4 !== 0 || slice.pageOffset % 4 !== 0)
-        throw new Error("Invalid preview preparation page.")
+        throw new Error("预览准备页面无效。")
       for (const value of new Float32Array(buffer, slice.pageOffset, slice.length / 4)) {
         if (!Number.isFinite(value)) throw new Error("A preview mesh contains invalid coordinates.")
       }
     } else if (slice.validation === "uint32") {
       if (slice.length % 4 !== 0 || slice.pageOffset % 4 !== 0)
-        throw new Error("Invalid preview preparation page.")
+        throw new Error("预览准备页面无效。")
       const vertexCount = slice.vertexCount
       if (vertexCount === undefined || !Number.isSafeInteger(vertexCount) || vertexCount < 0)
         throw new Error("A preview mesh has an invalid vertex count.")
@@ -299,9 +299,9 @@ export function validateUpload(buffer: ArrayBuffer, page: UploadPage): void {
           throw new Error("A preview mesh contains an invalid vertex index.")
       }
     } else if (slice.validation !== "none") {
-      throw new Error("Invalid preview preparation page.")
+      throw new Error("预览准备页面无效。")
     }
   }
   if (cursor !== page.byteLength || payloadBytes !== page.payloadBytes)
-    throw new Error("Invalid preview preparation page.")
+    throw new Error("预览准备页面无效。")
 }

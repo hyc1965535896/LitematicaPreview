@@ -483,7 +483,7 @@ mod tests {
         )
         .unwrap()
         .is_none());
-        let compact = super::super::decode_preview(&bytes, None, None, false, &|| Ok(())).unwrap();
+        let compact = super::super::decode_preview(&bytes, None, None, false, &[], &|| Ok(())).unwrap().0;
         assert_eq!(compact.block_count(), 1);
     }
 
@@ -519,7 +519,7 @@ mod tests {
         let bytes = gzip(&root);
         let dense = read(&bytes, &super::super::preview_limits()).unwrap();
         let compact =
-            super::super::decode_preview(&bytes, Some(16), None, false, &|| Ok(())).unwrap();
+            super::super::decode_preview(&bytes, Some(16), None, false, &[], &|| Ok(())).unwrap().0;
         assert_eq!(compact.block_count(), 26);
         assert_eq!(compact.block_count(), i64::from(dense.total_blocks()));
         assert_eq!(compact.block_entity_count(), 2);
@@ -544,7 +544,7 @@ mod tests {
         )
         .err()
         .expect("out-of-range packed index must be rejected");
-        let preview_error = super::super::decode_preview(&bytes, None, None, false, &|| Ok(()))
+        let preview_error = super::super::decode_preview(&bytes, None, None, false, &[], &|| Ok(()))
             .err()
             .unwrap();
         assert_eq!(preview_error, error);
@@ -594,10 +594,14 @@ mod tests {
         );
         assert_eq!(result, Err("cancelled".into()));
         assert_eq!(visited.get(), 65_536);
-        let result =
-            super::super::decode_preview(&gzip(&NbtCompound::new()), None, None, false, &|| {
-                Err("cancelled".into())
-            });
+        let result = super::super::decode_preview(
+            &gzip(&NbtCompound::new()),
+            None,
+            None,
+            false,
+            &[],
+            &|| Err("cancelled".into()),
+        );
         assert_eq!(result.err().as_deref(), Some("cancelled"));
     }
 

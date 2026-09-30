@@ -20,6 +20,9 @@
     "allow-cancel-load",
     "allow-register-associations",
     "allow-unregister-associations",
-    "allow-show-licenses"
+    "allow-show-licenses",
+    "allow-export-schematic",
+    "allow-block-catalog",
+    "allow-block-icons"
   ]
 }

@@ -70,7 +70,7 @@ const UP = new Float32Array([0, 1, 0])
 function required<T>(value: T | null, name: string): T {
   if (value === null)
     throw new Error(
-      `The graphics device could not allocate ${name}. It may be out of graphics memory.`,
+      `图形设备无法分配${name}，显卡内存可能已耗尽。`,
     )
   return value
 }
@@ -98,14 +98,14 @@ function createPreparationWorker(onError: (error: Error) => void): PreparationWo
       pending = null
       task.resolve(event.data.buffer)
     } else {
-      fail(new Error(event.data?.error || "Preview preparation failed."))
+      fail(new Error(event.data?.error || "预览准备失败。"))
     }
   }
   worker.onerror = (event) => {
     event.preventDefault()
-    fail(new Error(event.message || "Preview preparation failed."))
+    fail(new Error(event.message || "预览准备失败。"))
   }
-  worker.onmessageerror = () => fail(new Error("The preview worker returned unreadable data."))
+  worker.onmessageerror = () => fail(new Error("预览工作进程返回了无法读取的数据。"))
   return {
     prepare: (buffer, page) =>
       new Promise<ArrayBuffer>((resolve, reject) => {
@@ -199,7 +199,7 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
   if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader
   const message = gl.getShaderInfoLog(shader) || "Unknown shader compilation error."
   gl.deleteShader(shader)
-  throw new Error(`The WebGL 2 shader could not compile: ${message}`)
+  throw new Error(`WebGL 2 着色器编译失败：${message}`)
 }
 
 function program(
@@ -212,13 +212,13 @@ function program(
   let linked: WebGLProgram | null = null
   try {
     fragment = compile(gl, gl.FRAGMENT_SHADER, fragmentSource)
-    linked = required(gl.createProgram(), "a shader program")
+    linked = required(gl.createProgram(), "着色器程序")
     gl.attachShader(linked, vertex)
     gl.attachShader(linked, fragment)
     gl.linkProgram(linked)
     if (!gl.getProgramParameter(linked, gl.LINK_STATUS)) {
       throw new Error(
-        `The WebGL 2 program could not link: ${gl.getProgramInfoLog(linked) || "Unknown linking error."}`,
+        `WebGL 2 程序链接失败：${gl.getProgramInfoLog(linked) || "未知链接错误。"}`,
       )
     }
     gl.detachShader(linked, vertex)
@@ -303,7 +303,7 @@ export class SchematicRenderer {
       this.yieldChannel.port1.close()
       this.yieldChannel.port2.close()
       const message =
-        "WebGL 2 is unavailable. Enable graphics acceleration or update your graphics driver to preview schematics."
+        "WebGL 2 不可用。请启用图形加速或更新显卡驱动后再预览投影文件。"
       onError(message)
       throw new Error(message)
     }
@@ -431,11 +431,11 @@ export class SchematicRenderer {
         throw new Error("Cancelled")
       if (this.contextLost || this.gl.isContextLost())
         throw new Error(
-          "The graphics context was lost. Reopen the schematic after the graphics device recovers.",
+          "图形上下文已丢失。请在图形设备恢复后重新打开投影文件。",
         )
       if (!this.pipeline)
         throw new Error(
-          "The graphics renderer is unavailable. Reopen the application to initialize the graphics device.",
+          "图形渲染器不可用。请重新打开应用以初始化图形设备。",
         )
     }
     this.staged.add(model)
@@ -445,7 +445,7 @@ export class SchematicRenderer {
       const metadata = await upload(model, guard)
       guard()
       this.buildGrid(model, metadata)
-      this.checkGraphics("upload the schematic")
+      this.checkGraphics("上传该投影")
       guard()
       gl.bindVertexArray(null)
       this.staged.delete(model)
@@ -534,7 +534,7 @@ export class SchematicRenderer {
             const source = metadata.textures[target.textureIndex]
             let texture = model.textures[firstTexture + target.textureIndex]
             if (!texture) {
-              texture = required(gl.createTexture(), "a block texture")
+              texture = required(gl.createTexture(), "方块纹理")
               model.textures.push(texture)
               gl.activeTexture(gl.TEXTURE0)
               gl.bindTexture(gl.TEXTURE_2D, texture)
@@ -575,7 +575,7 @@ export class SchematicRenderer {
               for (let attribute = 0; attribute < 5; attribute++) {
                 gl.bindVertexArray(null)
                 guard()
-                const gpu = required(gl.createBuffer(), "a mesh buffer")
+                const gpu = required(gl.createBuffer(), "网格缓冲区")
                 buffers.push(gpu)
                 model.buffers.push(gpu)
                 const bindTarget = attribute === 4 ? gl.ELEMENT_ARRAY_BUFFER : gl.ARRAY_BUFFER
@@ -593,7 +593,7 @@ export class SchematicRenderer {
             const expected = metadata.parts[target.partIndex]
             if (target.attribute === 0 && slice.offset === 0) {
               part = {
-                vao: required(gl.createVertexArray(), "a mesh vertex array"),
+                vao: required(gl.createVertexArray(), "网格顶点数组"),
                 indexByteOffset: partLayout.offsets[4],
                 texture: model.textures[expected.textureIndex],
                 count: expected.indexCount,
@@ -722,11 +722,11 @@ export class SchematicRenderer {
     try {
       scene = program(gl, VERTEX_SOURCE, FRAGMENT_SOURCE)
       output = program(gl, OUTPUT_VERTEX_SOURCE, OUTPUT_FRAGMENT_SOURCE)
-      fullscreen = required(gl.createVertexArray(), "the output vertex array")
+      fullscreen = required(gl.createVertexArray(), "输出顶点数组")
       const uniform = (name: string) => {
         const location = gl.getUniformLocation(scene!, name)
         if (location === null)
-          throw new Error(`The graphics shader is missing its ${name} uniform.`)
+          throw new Error(`图形着色器缺少 ${name} uniform。`)
         return location
       }
       const pipeline: Pipeline = {
@@ -764,7 +764,7 @@ export class SchematicRenderer {
       for (const count of colorSamples) {
         if (count <= 4 && count > this.samples && depthSamples.includes(count)) this.samples = count
       }
-      this.checkGraphics("initialize WebGL 2")
+      this.checkGraphics("初始化 WebGL 2")
       this.pipeline = pipeline
     } catch (error) {
       if (scene) gl.deleteProgram(scene)
@@ -778,7 +778,7 @@ export class SchematicRenderer {
     guard()
     budget.bytes += bytes
     if (budget.bytes < 4 * UPLOAD_CHUNK && performance.now() - budget.started < 6) return
-    this.checkGraphics("upload the schematic")
+    this.checkGraphics("上传该投影")
     this.gl.bindVertexArray(null)
     await new Promise<void>((resolve) => {
       this.pendingYields.push(resolve)
@@ -817,8 +817,8 @@ export class SchematicRenderer {
     }
     const gl = this.gl
     model.gridCount = lines.length / 3
-    model.gridVao = required(gl.createVertexArray(), "the grid vertex array")
-    model.gridBuffer = required(gl.createBuffer(), "the grid buffer")
+    model.gridVao = required(gl.createVertexArray(), "网格线顶点数组")
+    model.gridBuffer = required(gl.createBuffer(), "网格线缓冲区")
     gl.bindVertexArray(model.gridVao)
     gl.bindBuffer(gl.ARRAY_BUFFER, model.gridBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, lines, gl.STATIC_DRAW)
@@ -909,7 +909,7 @@ export class SchematicRenderer {
       multisampleColor: null,
     }
     try {
-      targets.color = required(gl.createTexture(), "the linear color target")
+      targets.color = required(gl.createTexture(), "线性颜色纹理")
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, targets.color)
       gl.texStorage2D(gl.TEXTURE_2D, 1, gl.SRGB8_ALPHA8, width, height)
@@ -917,13 +917,13 @@ export class SchematicRenderer {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      targets.resolve = required(gl.createFramebuffer(), "the color framebuffer")
+      targets.resolve = required(gl.createFramebuffer(), "颜色帧缓冲")
       gl.bindFramebuffer(gl.FRAMEBUFFER, targets.resolve)
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, targets.color, 0)
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
-        throw new Error("The graphics device cannot create the linear color framebuffer.")
+        throw new Error("图形设备无法创建线性颜色帧缓冲。")
       targets.draw = targets.resolve
-      targets.depth = required(gl.createRenderbuffer(), "the depth target")
+      targets.depth = required(gl.createRenderbuffer(), "深度缓冲")
       gl.bindRenderbuffer(gl.RENDERBUFFER, targets.depth)
       if (this.samples > 1) {
         gl.renderbufferStorageMultisample(
@@ -933,9 +933,9 @@ export class SchematicRenderer {
           width,
           height,
         )
-        targets.draw = required(gl.createFramebuffer(), "the multisample framebuffer")
+        targets.draw = required(gl.createFramebuffer(), "多重采样帧缓冲")
         gl.bindFramebuffer(gl.FRAMEBUFFER, targets.draw)
-        targets.multisampleColor = required(gl.createRenderbuffer(), "the multisample color target")
+        targets.multisampleColor = required(gl.createRenderbuffer(), "多重采样颜色纹理")
         gl.bindRenderbuffer(gl.RENDERBUFFER, targets.multisampleColor)
         gl.renderbufferStorageMultisample(
           gl.RENDERBUFFER,
@@ -959,9 +959,9 @@ export class SchematicRenderer {
         gl.RENDERBUFFER,
         targets.depth,
       )
-      this.checkGraphics("allocate the drawing surface")
+      this.checkGraphics("分配绘制表面")
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
-        throw new Error("The graphics device cannot create the schematic drawing surface.")
+        throw new Error("图形设备无法创建投影绘制表面。")
       return targets
     } catch (error) {
       this.releaseTargets(targets)
@@ -1051,7 +1051,7 @@ export class SchematicRenderer {
       gl.bindVertexArray(pipeline.fullscreen)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
       gl.bindVertexArray(null)
-      this.checkGraphics("draw this schematic")
+      this.checkGraphics("绘制该投影")
     } catch (error) {
       this.failed = true
       this.onError(errorOf(error).message)
@@ -1088,10 +1088,10 @@ export class SchematicRenderer {
     }
     if (code === gl.CONTEXT_LOST_WEBGL)
       throw new Error(
-        "The graphics context was lost. Reopen the schematic after the graphics device recovers.",
+        "图形上下文已丢失。请在图形设备恢复后重新打开投影文件。",
       )
     throw new Error(
-      `The graphics device could not ${action} (WebGL error 0x${code.toString(16)}). The model or window may exceed available graphics memory.`,
+      `图形设备无法${action}（WebGL 错误 0x${code.toString(16)}）。模型或窗口可能超出了可用的显卡内存。`,
     )
   }
 
@@ -1247,7 +1247,7 @@ export class SchematicRenderer {
     this.targets = null
     this.releasePipeline()
     this.onError(
-      "The graphics context was lost. Reopen the schematic after the graphics device recovers.",
+      "图形上下文已丢失。请在图形设备恢复后重新打开投影文件。",
     )
   }
 
@@ -1258,7 +1258,7 @@ export class SchematicRenderer {
     try {
       this.initialize()
       this.invalidate()
-      this.onError("The graphics device recovered. Reopen the schematic to restore its preview.")
+      this.onError("图形设备已恢复。重新打开投影文件即可恢复预览。")
     } catch (error) {
       this.failed = true
       this.onError(errorOf(error).message)

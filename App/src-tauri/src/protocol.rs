@@ -2,7 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::io::{self, Read, Write};
 
-use litematica_preview_native::{parts, Preview, PreviewInfo};
+use litematica_preview_native::{parts, LoadedPreview, Preview, PreviewInfo};
 use serde::{Deserialize, Serialize};
 
 pub const FRAME_BYTES: usize = 1024 * 1024;
@@ -17,10 +17,10 @@ const PROGRESS: u8 = 6;
 const CHUNK: u8 = 7;
 const CONTINUE: u8 = 1;
 const CANCEL: u8 = 0;
-const TOO_LARGE: &str = "The preview is too large to transfer to the graphics device.";
+const TOO_LARGE: &str = "预览过大，无法传输到图形设备。";
 
 #[cfg(not(target_endian = "little"))]
-compile_error!("The preview buffers require a little-endian target.");
+compile_error!("预览缓冲区需要小端序目标平台。");
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +33,18 @@ pub struct Metadata {
     pub byte_length: usize,
     pub textures: Vec<TextureMetadata>,
     pub parts: Vec<PartMetadata>,
+    #[serde(default)]
+    pub materials: Vec<MaterialRecord>,
+    #[serde(default)]
+    pub replaced: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialRecord {
+    pub name: String,
+    pub properties: Vec<(String, String)>,
+    pub count: i64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -87,12 +99,16 @@ struct PartRecord {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Summary {
-    block_count: i64,
-    block_entity_count: i64,
-    triangle_count: u64,
-    min: [f32; 3],
-    max: [f32; 3],
+pub struct Summary {
+    pub block_count: i64,
+    pub block_entity_count: i64,
+    pub triangle_count: u64,
+    pub min: [f32; 3],
+    pub max: [f32; 3],
+    #[serde(default)]
+    pub materials: Vec<MaterialRecord>,
+    #[serde(default)]
+    pub replaced: i64,
 }
 
 /// Stores one logical renderer payload as allocation-sized segments without
@@ -124,31 +140,31 @@ fn align4(value: usize) -> Option<usize> {
 impl Payload {
     pub fn read_ranges(&self, ranges: &[ReadRange]) -> Result<Vec<u8>, String> {
         if ranges.is_empty() || ranges.len() > MAX_READ_RANGES {
-            return Err("Invalid preview range.".into());
+            return Err("预览范围无效。".into());
         }
         let mut total = 0usize;
         for range in ranges {
             let buffer = self
                 .buffers
                 .get(range.buffer_id)
-                .ok_or("Invalid preview range.")?;
+                .ok_or("预览范围无效。")?;
             let end = range
                 .offset
                 .checked_add(range.length)
-                .ok_or("Invalid preview range.")?;
+                .ok_or("预览范围无效。")?;
             if range.length == 0 || end > buffer.length {
-                return Err("Invalid preview range.".into());
+                return Err("预览范围无效。".into());
             }
             total = align4(total)
                 .and_then(|total| total.checked_add(range.length))
                 .filter(|total| *total <= FRAME_BYTES)
-                .ok_or("Invalid preview range.")?;
+                .ok_or("预览范围无效。")?;
         }
 
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(total)
-            .map_err(|_| "There is not enough memory to upload this preview.")?;
+            .map_err(|_| "内存不足，无法上传此预览。")?;
         bytes.resize(total, 0);
         let mut destination = 0usize;
         for range in ranges {
@@ -269,7 +285,7 @@ fn invalid(message: impl Into<String>) -> io::Error {
 
 fn write_packet(stream: &mut impl Write, kind: u8, bytes: &[u8]) -> io::Result<()> {
     if bytes.len() > FRAME_BYTES {
-        return Err(invalid("The decoder packet is too large."));
+        return Err(invalid("解码器数据包过大。"));
     }
     stream.write_all(&[kind])?;
     stream.write_all(&(bytes.len() as u32).to_le_bytes())?;
@@ -281,12 +297,12 @@ fn read_packet(stream: &mut impl Read) -> io::Result<(u8, Vec<u8>)> {
     stream.read_exact(&mut header)?;
     let length = u32::from_le_bytes(header[1..].try_into().unwrap()) as usize;
     if length > FRAME_BYTES {
-        return Err(invalid("The decoder packet is too large."));
+        return Err(invalid("解码器数据包过大。"));
     }
     let mut bytes = Vec::new();
     bytes
         .try_reserve_exact(length)
-        .map_err(|_| invalid("There is not enough memory to receive this preview."))?;
+        .map_err(|_| invalid("内存不足，无法接收此预览。"))?;
     bytes.resize(length, 0);
     stream.read_exact(&mut bytes)?;
     Ok((header[0], bytes))
@@ -325,7 +341,7 @@ impl<'a, S: Read + Write> Encoder<'a, S> {
         match ack[0] {
             CONTINUE => Ok(()),
             CANCEL => Err("Cancelled".into()),
-            _ => Err("Invalid decoder acknowledgement.".into()),
+            _ => Err("解码器确认无效。".into()),
         }
     }
 
@@ -402,6 +418,8 @@ impl<'a, S: Read + Write> Encoder<'a, S> {
                 triangle_count: preview.info.triangle_count,
                 min: preview.info.min,
                 max: preview.info.max,
+                materials: Vec::new(),
+                replaced: 0,
             },
         )
     }
@@ -410,7 +428,7 @@ impl<'a, S: Read + Write> Encoder<'a, S> {
         let mut bytes = Vec::with_capacity(FRAME_BYTES);
         for value in values {
             if !value.is_finite() {
-                return Err("The mesher produced a non-finite attribute.".into());
+                return Err("网格生成器产生了非有限的数值属性。".into());
             }
             bytes.push(if signed {
                 (value.clamp(-1.0, 1.0) * 127.0).round() as i8 as u8
@@ -429,15 +447,25 @@ impl<'a, S: Read + Write> Encoder<'a, S> {
     }
 }
 
-pub fn finish(stream: &mut impl Write, result: Result<PreviewInfo, String>) -> io::Result<()> {
+pub fn finish(stream: &mut impl Write, result: Result<LoadedPreview, String>) -> io::Result<()> {
     match result {
-        Ok(info) => {
+        Ok(loaded) => {
             let summary = Summary {
-                block_count: info.block_count,
-                block_entity_count: info.block_entity_count,
-                triangle_count: info.triangle_count,
-                min: info.min,
-                max: info.max,
+                block_count: loaded.info.block_count,
+                block_entity_count: loaded.info.block_entity_count,
+                triangle_count: loaded.info.triangle_count,
+                min: loaded.info.min,
+                max: loaded.info.max,
+                materials: loaded
+                    .materials
+                    .into_iter()
+                    .map(|entry| MaterialRecord {
+                        name: entry.name,
+                        properties: entry.properties,
+                        count: entry.count,
+                    })
+                    .collect(),
+                replaced: loaded.replaced,
             };
             write_packet(
                 stream,
@@ -446,10 +474,11 @@ pub fn finish(stream: &mut impl Write, result: Result<PreviewInfo, String>) -> i
             )
         }
         Err(error) => {
+            const OVERSIZED_ERROR_FALLBACK: &str = "解码器返回了过大的错误信息。";
             let message = if error.len() <= FRAME_BYTES {
                 error.as_bytes()
             } else {
-                b"The decoder returned an oversized error."
+                OVERSIZED_ERROR_FALLBACK.as_bytes()
             };
             write_packet(stream, ERROR, message)
         }
@@ -477,6 +506,34 @@ pub fn receive(
     }
 }
 
+/// Reads a summary-only terminator exchange used by export requests. Any
+/// data packet invalidates the connection; errors preserve the usual text.
+pub fn receive_summary(
+    stream: &mut (impl Read + Write),
+    current: impl Fn() -> bool,
+) -> io::Result<Result<Summary, String>> {
+    loop {
+        let (kind, bytes) = read_packet(stream)?;
+        if !current() {
+            let _ = stream.write_all(&[CANCEL]);
+            return Ok(Err("Cancelled".into()));
+        }
+        match kind {
+            ERROR => {
+                let error =
+                    String::from_utf8(bytes).map_err(|_| invalid("解码器错误文本无效。"))?;
+                return Ok(Err(error));
+            }
+            END => {
+                let summary: Summary = serde_json::from_slice(&bytes)
+                    .map_err(|e| invalid(format!("解码器请求无效：{e}")))?;
+                return Ok(Ok(summary));
+            }
+            _ => return Err(invalid("意外的解码器记录。")),
+        }
+    }
+}
+
 pub fn receive_stream(
     stream: &mut (impl Read + Write),
     current: impl Fn() -> bool,
@@ -499,7 +556,7 @@ pub fn receive_stream(
         cancelled |= !current();
         if kind == ERROR {
             let error =
-                String::from_utf8(bytes).map_err(|_| invalid("Invalid decoder error text."))?;
+                String::from_utf8(bytes).map_err(|_| invalid("解码器错误文本无效。"))?;
             return Ok(Err(consumer_error.unwrap_or_else(|| {
                 if cancelled {
                     "Cancelled".into()
@@ -513,20 +570,22 @@ pub fn receive_stream(
                 return Ok(Err(consumer_error.unwrap_or_else(|| "Cancelled".into())));
             }
             if !pending.is_empty() || !buffers.is_empty() {
-                return Err(invalid("The decoder preview is truncated."));
+                return Err(invalid("解码器预览数据被截断。"));
             }
             if progress.is_some_and(|(completed, total)| completed != total) {
-                return Err(invalid("The decoder mesh progress is incomplete."));
+                return Err(invalid("解码器网格进度不完整。"));
             }
-            let metadata = published.ok_or_else(|| invalid("The decoder returned no chunks."))?;
+            let mut metadata = published.ok_or_else(|| invalid("解码器未返回任何区块。"))?;
             let summary = parse_summary(&bytes, metadata.triangle_count)?;
             if summary.block_count != metadata.block_count
                 || summary.block_entity_count != metadata.block_entity_count
                 || summary.min != metadata.min
                 || summary.max != metadata.max
             {
-                return Err(invalid("The decoder summary does not match its chunks."));
+                return Err(invalid("解码器汇总与区块不匹配。"));
             }
+            metadata.materials = summary.materials;
+            metadata.replaced = summary.replaced;
             return Ok(Ok(metadata));
         }
         if cancelled {
@@ -556,6 +615,8 @@ pub fn receive_stream(
                     byte_length: std::mem::take(&mut total),
                     textures: std::mem::take(&mut textures),
                     parts: std::mem::take(&mut parts),
+                    materials: Vec::new(),
+                    replaced: 0,
                 };
                 let aggregate = published.get_or_insert_with(|| Metadata {
                     block_count: metadata.block_count,
@@ -566,11 +627,13 @@ pub fn receive_stream(
                     byte_length: 0,
                     textures: Vec::new(),
                     parts: Vec::new(),
+                    materials: Vec::new(),
+                    replaced: 0,
                 });
                 if aggregate.block_count != metadata.block_count
                     || aggregate.block_entity_count != metadata.block_entity_count
                 {
-                    return Err(invalid("The decoder chunk source counts changed."));
+                    return Err(invalid("解码器区块来源数量发生了变化。"));
                 }
                 aggregate.triangle_count = aggregate
                     .triangle_count
@@ -618,7 +681,7 @@ pub fn receive_stream(
                     .checked_mul(record.height as usize)
                     .and_then(|n| n.checked_mul(4));
                 if record.width == 0 || record.height == 0 || size != Some(record.byte_length) {
-                    return Err(invalid("The decoder returned an invalid texture."));
+                    return Err(invalid("解码器返回了无效的纹理。"));
                 }
                 let id = add_buffer(&mut buffers, &mut total, record.byte_length)?;
                 pending.push_back((id, None));
@@ -641,7 +704,7 @@ pub fn receive_stream(
                     || record.texture_index as usize >= texture_offset + textures.len()
                     || record.alpha_mode > 2
                 {
-                    return Err(invalid("The decoder returned an invalid mesh part."));
+                    return Err(invalid("解码器返回了无效的网格部件。"));
                 }
                 let v = record.vertex_count as usize;
                 let lengths = [
@@ -675,23 +738,23 @@ pub fn receive_stream(
             DATA => {
                 let &(id, index_limit) = pending
                     .front()
-                    .ok_or_else(|| invalid("Unexpected preview buffer."))?;
+                    .ok_or_else(|| invalid("意外的预览缓冲区。"))?;
                 let buffer = &mut buffers[id];
                 let received = buffer.ends.last().copied().unwrap_or(0);
                 let expected = buffer
                     .length
                     .checked_sub(received)
-                    .ok_or_else(|| invalid("The decoder buffer is oversized."))?
+                    .ok_or_else(|| invalid("解码器缓冲区过大。"))?
                     .min(FRAME_BYTES);
                 if bytes.len() != expected {
-                    return Err(invalid("The decoder buffer is truncated or oversized."));
+                    return Err(invalid("解码器缓冲区被截断或过大。"));
                 }
                 if let Some(limit) = index_limit {
                     if bytes
                         .chunks_exact(4)
                         .any(|value| u32::from_le_bytes(value.try_into().unwrap()) >= limit)
                     {
-                        return Err(invalid("The decoder returned an out-of-range mesh index."));
+                        return Err(invalid("解码器返回了超出范围的网格索引。"));
                     }
                 }
                 buffer.segments.push(bytes);
@@ -709,13 +772,13 @@ pub fn receive_stream(
                         count != total || completed <= previous
                     })
                 {
-                    return Err(invalid("The decoder returned invalid mesh progress."));
+                    return Err(invalid("解码器返回了无效的网格进度。"));
                 }
                 progress = Some((completed, count));
                 on_progress(completed, count);
             }
             CHECKPOINT if pending.is_empty() && bytes.is_empty() => {}
-            _ => return Err(invalid("Unexpected decoder record.")),
+            _ => return Err(invalid("意外的解码器记录。")),
         }
         stream.write_all(&[if cancelled { CANCEL } else { CONTINUE }])?;
     }
@@ -734,7 +797,7 @@ fn parse_summary(bytes: &[u8], counted: u64) -> io::Result<Summary> {
             .all(|value| value.is_finite())
         || (0..3).any(|axis| summary.min[axis] > summary.max[axis])
     {
-        return Err(invalid("The decoder returned invalid preview metadata."));
+        return Err(invalid("解码器返回了无效的预览元数据。"));
     }
     Ok(summary)
 }
@@ -744,7 +807,7 @@ fn add_buffer(buffers: &mut Vec<Buffer>, total: &mut usize, length: usize) -> io
         .checked_add(length)
         .ok_or_else(|| invalid(TOO_LARGE))?;
     if length == 0 {
-        return Err(invalid("The decoder returned an empty buffer."));
+        return Err(invalid("解码器返回了空缓冲区。"));
     }
     let id = buffers.len();
     buffers.push(Buffer {
@@ -810,6 +873,7 @@ pub(crate) mod tests {
                             .then_some(2),
                         ..PreviewOptions::default()
                     },
+                    &[],
                     |preview| {
                         native_alpha.extend(parts(&preview.mesh).map(|(_, _, alpha)| alpha));
                         encoder.chunk(preview)
@@ -818,7 +882,7 @@ pub(crate) mod tests {
                     || Ok(()),
                 );
                 drop(encoder);
-                finish(&mut sender, info).unwrap();
+                finish(&mut sender, info.map(|loaded| loaded)).unwrap();
                 ended.store(true, Ordering::Release);
                 native_alpha
             });
@@ -917,11 +981,15 @@ pub(crate) mod tests {
         }
         finish(
             &mut bytes,
-            Ok(PreviewInfo {
-                block_count: 1,
-                triangle_count: chunks as u64,
-                max: [1.0; 3],
-                ..PreviewInfo::default()
+            Ok(litematica_preview_native::LoadedPreview {
+                info: PreviewInfo {
+                    block_count: 1,
+                    triangle_count: chunks as u64,
+                    max: [1.0; 3],
+                    ..PreviewInfo::default()
+                },
+                materials: Vec::new(),
+                replaced: 0,
             }),
         )
         .unwrap();
@@ -1113,6 +1181,8 @@ pub(crate) mod tests {
                 byte_length: 0,
                 textures: vec![],
                 parts: records,
+                materials: Vec::new(),
+                replaced: 0,
             },
             source,
             || true,
@@ -1138,6 +1208,8 @@ pub(crate) mod tests {
                 byte_length: FRAME_BYTES + 3,
                 textures: vec![],
                 parts: vec![],
+                materials: Vec::new(),
+                replaced: 0,
             },
             buffers: vec![Buffer {
                 segments: vec![vec![7; FRAME_BYTES], vec![8, 9, 10]],
@@ -1170,6 +1242,8 @@ pub(crate) mod tests {
                 byte_length: 11,
                 textures: vec![],
                 parts: vec![],
+                materials: Vec::new(),
+                replaced: 0,
             },
             buffers: vec![
                 Buffer {
@@ -1214,6 +1288,8 @@ pub(crate) mod tests {
                 byte_length: FRAME_BYTES,
                 textures: vec![],
                 parts: vec![],
+                materials: Vec::new(),
+                replaced: 0,
             },
             buffers: vec![Buffer {
                 segments: vec![vec![42; FRAME_BYTES]],
@@ -1232,17 +1308,17 @@ pub(crate) mod tests {
             payload
                 .read_ranges(&[range(0, 0, FRAME_BYTES - 3), range(0, 0, 1)])
                 .unwrap_err(),
-            "Invalid preview range."
+            "预览范围无效。"
         );
         assert_eq!(
             payload.read_ranges(&[]).unwrap_err(),
-            "Invalid preview range."
+            "预览范围无效。"
         );
         assert_eq!(
             payload
                 .read_ranges(&vec![range(0, 0, 1); MAX_READ_RANGES + 1])
                 .unwrap_err(),
-            "Invalid preview range."
+            "预览范围无效。"
         );
         for bad in [
             range(0, 0, 0),
@@ -1252,7 +1328,7 @@ pub(crate) mod tests {
         ] {
             assert_eq!(
                 payload.read_ranges(&[range(0, 0, 1), bad]).unwrap_err(),
-                "Invalid preview range."
+                "预览范围无效。"
             );
         }
         assert_eq!(
@@ -1315,6 +1391,8 @@ pub(crate) mod tests {
             byte_length: 78,
             textures: vec![],
             parts: records,
+            materials: Vec::new(),
+            replaced: 0,
         };
         let payload = Payload::assemble(metadata, buffers, || true).unwrap();
         let part = &payload.metadata.parts[0];
@@ -1399,17 +1477,23 @@ pub(crate) mod tests {
                 triangle_count: 1,
                 min: [0.0; 3],
                 max: [1.0; 3],
+                materials: Vec::new(),
+                replaced: 0,
             })
             .unwrap(),
         )
         .unwrap();
         finish(
             &mut bytes,
-            Ok(PreviewInfo {
-                block_count: 1,
-                triangle_count: 1,
-                max: [1.0; 3],
-                ..PreviewInfo::default()
+            Ok(litematica_preview_native::LoadedPreview {
+                info: PreviewInfo {
+                    block_count: 1,
+                    triangle_count: 1,
+                    max: [1.0; 3],
+                    ..PreviewInfo::default()
+                },
+                materials: Vec::new(),
+                replaced: 0,
             }),
         )
         .unwrap();

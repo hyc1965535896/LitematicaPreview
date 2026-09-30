@@ -14,7 +14,7 @@ pub(crate) const BATCH_BLOCKS: usize = 16 * 1024;
 
 pub(crate) fn check_cancelled(cancelled: &AtomicBool) -> Result<(), String> {
     if cancelled.load(Ordering::Relaxed) {
-        Err("Parallel preview cancelled.".into())
+        Err("并行预览已取消。".into())
     } else {
         Ok(())
     }
@@ -61,7 +61,7 @@ pub(crate) fn ordered<T: Send, R: Send>(
                                     work(job, cancelled)
                                 }))
                                 .unwrap_or_else(|_| {
-                                    Err("A parallel preview worker panicked.".into())
+                                    Err("一个并行预览工作线程发生了 panic。".into())
                                 });
                             if let Err(error) = &result {
                                 worker_error
@@ -75,7 +75,7 @@ pub(crate) fn ordered<T: Send, R: Send>(
                             }
                         }
                     })
-                    .map_err(|error| format!("Unable to start preview worker: {error}"))?;
+                    .map_err(|error| format!("无法启动预览工作线程：{error}"))?;
                 inputs.push(input);
                 outputs.push(output);
                 handles.push(handle);
@@ -94,7 +94,7 @@ pub(crate) fn ordered<T: Send, R: Send>(
                 }
                 input
                     .send(job)
-                    .map_err(|_| "A parallel preview worker stopped.".to_string())?;
+                    .map_err(|_| "一个并行预览工作线程已停止。".to_string())?;
                 Ok::<_, String>(true)
             };
             let mut admitted = 0;
@@ -131,7 +131,7 @@ pub(crate) fn ordered<T: Send, R: Send>(
                                 }
                             }
                             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                                return Err("A parallel preview worker stopped.".into());
+                                return Err("一个并行预览工作线程已停止。".into());
                             }
                         }
                     })();
@@ -171,7 +171,7 @@ pub(crate) fn ordered<T: Send, R: Send>(
         let mut result = result;
         for handle in handles {
             if handle.join().is_err() && result.is_ok() {
-                result = Err("A parallel preview worker panicked.".into());
+                result = Err("一个并行预览工作线程发生了 panic。".into());
             }
         }
         result
@@ -285,7 +285,7 @@ mod tests {
             assert_eq!(
                 result.err().as_deref(),
                 Some(if panic {
-                    "A parallel preview worker panicked."
+                    "一个并行预览工作线程发生了 panic。"
                 } else {
                     "invalid packed state"
                 })

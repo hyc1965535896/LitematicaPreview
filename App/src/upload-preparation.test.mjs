@@ -88,7 +88,7 @@ for (const speedFirst of [false, true]) {
       assert.equal(new Uint8Array(firstPage.buffer)[0], 0)
       await turn()
       assert.deepEqual(reads, initialReads)
-      await assert.rejects(preparation.take(), /previous preview page/)
+      await assert.rejects(preparation.take(), /预览页面尚未上传/)
       preparation.release()
       await turn()
       assert.deepEqual(reads, [...initialReads, limit])
@@ -281,7 +281,7 @@ test("page validation checks every aligned slice without treating padding as pay
   assert.throws(() => validateUpload(indexBuffer, indexPage), /invalid vertex index/)
   assert.throws(
     () => validateUpload(buffer, { ...page, payloadBytes: 20 }),
-    /Invalid preview preparation page/,
+    /预览准备页面无效/,
   )
   assert.throws(() => validateUpload(buffer, { ...page, byteLength: 19 }), /incomplete/)
   assert.throws(
@@ -290,7 +290,7 @@ test("page validation checks every aligned slice without treating padding as pay
         ...page,
         slices: [page.slices[0], { ...page.slices[1], pageOffset: 3 }, page.slices[2]],
       }),
-    /Invalid preview preparation page/,
+    /预览准备页面无效/,
   )
   assert.throws(
     () =>
@@ -298,15 +298,15 @@ test("page validation checks every aligned slice without treating padding as pay
         ...page,
         slices: [page.slices[0], { ...page.slices[1], length: 7 }, page.slices[2]],
       }),
-    /Invalid preview preparation page/,
+    /预览准备页面无效/,
   )
   assert.throws(
     () => validateUpload(buffer, { ...page, slices: [] }),
-    /Invalid preview preparation page/,
+    /预览准备页面无效/,
   )
   assert.throws(
     () => validateUpload(buffer, { ...page, slices: Array(257).fill(page.slices[0]) }),
-    /Invalid preview preparation page/,
+    /预览准备页面无效/,
   )
 })
 
@@ -367,7 +367,7 @@ test("multi-slice page remains held until all its bytes are consumed", async () 
     assert.equal(held.buffer.byteLength, 8)
     assert.deepEqual([...new Uint8Array(held.buffer, 0, 3)], [10, 11, 12])
     assert.equal(new Uint32Array(held.buffer, 4, 1)[0], 2)
-    await assert.rejects(preparation.take(), /previous preview page/)
+    await assert.rejects(preparation.take(), /预览页面尚未上传/)
     assert.deepEqual(reads, [first, second])
     preparation.release()
     await turn()

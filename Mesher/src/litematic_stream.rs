@@ -231,9 +231,9 @@ struct Scan<'a, F> {
 
 impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
     fn node(&mut self, depth: usize) -> Result<(), String> {
-        self.nodes = self.nodes.checked_add(1).ok_or("NBT node count overflow")?;
+        self.nodes = self.nodes.checked_add(1).ok_or("NBT 节点数量溢出")?;
         if depth > self.input.limits.max_nbt_depth || self.nodes > self.input.limits.max_nbt_nodes {
-            return Err("NBT depth or node limit exceeded".into());
+            return Err("超出 NBT 深度或节点上限".into());
         }
         Ok(())
     }
@@ -241,7 +241,7 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
     fn count(&mut self) -> Result<usize, String> {
         let count = i32::from_be_bytes(self.input.number()?);
         if count < 0 || count as usize > self.input.limits.max_nbt_collection_items {
-            return Err("NBT collection limit exceeded".into());
+            return Err("超出 NBT 集合数量上限".into());
         }
         Ok(count as usize)
     }
@@ -249,7 +249,7 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
     fn string(&mut self, retain: bool) -> Result<Option<String>, String> {
         let length = u16::from_be_bytes(self.input.number()?) as usize;
         if length > self.input.limits.max_nbt_string_bytes {
-            return Err("NBT string limit exceeded".into());
+            return Err("超出 NBT 字符串长度上限".into());
         }
         let needed = length + 4;
         self.string.clear();
@@ -283,9 +283,9 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
         if tag == 0 {
             return Ok(None);
         }
-        *count = count.checked_add(1).ok_or("NBT compound size overflow")?;
+        *count = count.checked_add(1).ok_or("NBT 复合标签大小溢出")?;
         if *count > self.input.limits.max_nbt_collection_items {
-            return Err("NBT collection limit exceeded".into());
+            return Err("超出 NBT 集合数量上限".into());
         }
         let name = self.string(true)?.expect("retained NBT name");
         Ok(Some((tag, name)))
@@ -298,7 +298,7 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
             return Err("invalid NBT list tag".into());
         }
         if count > self.input.limits.max_nbt_nodes.saturating_sub(self.nodes) {
-            return Err("NBT node limit exceeded".into());
+            return Err("超出 NBT 节点上限".into());
         }
         Ok((child, count))
     }

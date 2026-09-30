@@ -7,7 +7,7 @@ mod preview_process;
 mod protocol;
 mod resources;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use preview::PreviewWorker;
@@ -51,7 +51,7 @@ async fn bootstrap(state: State<'_, HostState>) -> Result<Bootstrap, String> {
         })
     })
     .await
-    .map_err(|e| format!("Unable to load the welcome screen: {e}"))?
+    .map_err(|e| format!("无法加载欢迎界面：{e}"))?
 }
 
 #[tauri::command]
@@ -61,20 +61,20 @@ async fn choose_file(app: AppHandle, window: WebviewWindow) -> Result<Option<Str
         app.dialog()
             .file()
             .set_parent(&window)
-            .set_title("Open Minecraft schematic")
-            .add_filter("Minecraft schematics", &extensions)
-            .add_filter("All files", &["*"])
+            .set_title("打开 Minecraft 投影文件")
+            .add_filter("Minecraft 投影文件", &extensions)
+            .add_filter("所有文件", &["*"])
             .blocking_pick_file()
             .map(|file| {
                 let path = file
                     .into_path()
-                    .map_err(|e| format!("Unable to open the selected file: {e}"))?;
+                    .map_err(|e| format!("无法打开所选文件：{e}"))?;
                 resources::path_string(&path)
             })
             .transpose()
     })
     .await
-    .map_err(|e| format!("Unable to show the file picker: {e}"))?
+    .map_err(|e| format!("无法显示文件选择器：{e}"))?
 }
 
 #[derive(Clone, Serialize)]
@@ -98,7 +98,7 @@ fn preview_path(path: String) -> Result<PathBuf, String> {
         });
     if !supported {
         return Err(format!(
-            "Choose a supported schematic: {}.",
+            "请选择受支持的投影文件：{}。",
             EXTENSIONS.join(", ")
         ));
     }
@@ -133,7 +133,7 @@ async fn load_preview(
     options: preview::LoadOptions,
     state: State<'_, HostState>,
 ) -> Result<protocol::Metadata, String> {
-    let options = options.validate()?;
+    let (options, replacements) = options.validate()?;
     let worker = Arc::clone(&state.worker);
     worker.advance(request_id);
     worker.ensure_current(request_id)?;
@@ -147,13 +147,14 @@ async fn load_preview(
             &pack_path,
             request_id,
             options,
+            &replacements,
             |completed, total| report_progress(&app, &worker, request_id, completed, total),
         )?;
         worker.ensure_current(request_id)?;
         Ok(metadata)
     })
     .await
-    .map_err(|e| format!("The preview worker stopped unexpectedly: {e}"))?
+    .map_err(|e| format!("预览工作进程意外停止：{e}"))?
 }
 
 #[tauri::command]
@@ -164,9 +165,9 @@ fn start_preview(
     options: preview::LoadOptions,
     state: State<'_, HostState>,
 ) -> Result<(), String> {
-    let options = options.validate()?;
+    let (options, replacements) = options.validate()?;
     if options.thread_count.is_none() {
-        return Err("Streaming preview requires multithreading.".into());
+        return Err("流式预览需要启用多线程。".into());
     }
     let path = preview_path(path)?;
     let worker = Arc::clone(&state.worker);
@@ -177,9 +178,16 @@ fn start_preview(
         let producer = Arc::clone(&worker);
         let result = tauri::async_runtime::spawn_blocking(move || {
             let pack = resources.pack()?;
-            producer.load_stream(&path, &pack, request_id, options, |completed, total| {
-                report_progress(&app, &producer, request_id, completed, total)
-            })
+            producer.load_stream(
+                &path,
+                &pack,
+                request_id,
+                options,
+                &replacements,
+                |completed, total| {
+                    report_progress(&app, &producer, request_id, completed, total)
+                },
+            )
         })
         .await;
         match result {
@@ -187,7 +195,7 @@ fn start_preview(
             Ok(Err(error)) => worker.fail_stream(request_id, error),
             Err(error) => worker.fail_stream(
                 request_id,
-                format!("The preview worker stopped unexpectedly: {error}"),
+                format!("预览工作进程意外停止：{error}"),
             ),
         }
     });
@@ -203,7 +211,7 @@ async fn next_preview(
     let worker = Arc::clone(&state.worker);
     tauri::async_runtime::spawn_blocking(move || worker.next(request_id, previous_batch_id))
         .await
-        .map_err(|e| format!("Unable to receive the next preview batch: {e}"))?
+        .map_err(|e| format!("无法接收下一个预览批次：{e}"))?
 }
 
 #[tauri::command]
@@ -220,7 +228,7 @@ async fn read_preview(
             .map(tauri::ipc::Response::new)
     })
     .await
-    .map_err(|e| format!("Unable to read the preview buffer: {e}"))?
+    .map_err(|e| format!("无法读取预览缓冲区：{e}"))?
 }
 
 #[tauri::command]
@@ -245,14 +253,14 @@ async fn register_associations() -> Result<(), String> {
         associations::open_settings()
     })
     .await
-    .map_err(|e| format!("Unable to register file associations: {e}"))?
+    .map_err(|e| format!("无法注册文件关联：{e}"))?
 }
 
 #[tauri::command]
 async fn unregister_associations() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(associations::unregister)
         .await
-        .map_err(|e| format!("Unable to remove file associations: {e}"))?
+        .map_err(|e| format!("无法移除文件关联：{e}"))?
 }
 
 #[tauri::command]
@@ -260,7 +268,142 @@ async fn show_licenses(state: State<'_, HostState>) -> Result<(), String> {
     let resources = state.resources.clone();
     tauri::async_runtime::spawn_blocking(move || open_folder(&resources.licenses()?))
         .await
-        .map_err(|e| format!("Unable to open the license folder: {e}"))?
+        .map_err(|e| format!("无法打开许可证文件夹：{e}"))?
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportOutcome {
+    destination: String,
+    replaced: i64,
+    block_count: i64,
+}
+
+#[tauri::command]
+async fn export_schematic(
+    app: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    format: String,
+    replacements: Vec<litematica_preview_native::BlockReplacement>,
+    state: State<'_, HostState>,
+) -> Result<ExportOutcome, String> {
+    litematica_preview_native::validate_replacements(&replacements)?;
+    let export_format = litematica_preview_native::ExportFormat::from_extension(&format)
+        .ok_or_else(|| format!("不受支持的导出格式：{format}"))?;
+    let path = preview_path(path)?;
+    let default_name = format!(
+        "{}-已替换.{}",
+        path.file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("schematic"),
+        export_format.extension()
+    );
+    let destination = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_parent(&window)
+            .set_title("导出新原理图")
+            .set_file_name(&default_name)
+            .add_filter("Minecraft 投影文件", &[export_format.extension()])
+            .blocking_save_file()
+            .map(|file| {
+                file.into_path()
+                    .map_err(|e| format!("无法打开所选文件：{e}"))
+            })
+            .transpose()
+    })
+    .await
+    .map_err(|e| format!("无法显示保存对话框：{e}"))?
+    .map_err(|e| format!("无法打开所选文件：{e}"))?;
+    let Some(destination) = destination else {
+        return Err("Cancelled".into());
+    };
+    let outcome_destination = destination.clone();
+    let worker = Arc::clone(&state.worker);
+    tauri::async_runtime::spawn_blocking(move || {
+        worker.export(&path, &replacements, &format, &destination, None)
+    })
+    .await
+    .map_err(|e| format!("预览工作进程意外停止：{e}"))?
+    .map(|summary| ExportOutcome {
+        destination: resources::path_string(&outcome_destination).unwrap_or_default(),
+        replaced: summary.replaced,
+        block_count: summary.block_count,
+    })
+}
+
+#[tauri::command]
+async fn block_catalog(state: State<'_, HostState>) -> Result<Vec<String>, String> {
+    let resources = state.resources.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let pack_path = resources.pack()?;
+        block_catalog_from_pack(&pack_path)
+    })
+    .await
+    .map_err(|e| format!("无法读取方块列表：{e}"))?
+}
+
+/// Icons come from the bundled pack, fixed for the process lifetime.
+static BLOCK_ICONS: std::sync::OnceLock<Result<Arc<[litematica_preview_native::BlockIcon]>, String>> =
+    std::sync::OnceLock::new();
+
+#[tauri::command]
+async fn block_icons(
+    state: State<'_, HostState>,
+) -> Result<Arc<[litematica_preview_native::BlockIcon]>, String> {
+    if let Some(cached) = BLOCK_ICONS.get() {
+        return match cached {
+            Ok(icons) => Ok(Arc::clone(icons)),
+            Err(message) => Err(message.clone()),
+        };
+    }
+    let resources = state.resources.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        BLOCK_ICONS
+            .get_or_init(|| {
+                let pack_path = resources.pack()?;
+                let bytes = std::fs::read(&pack_path)
+                    .map_err(|e| format!("无法读取随附的方块资源：{e}"))?;
+                litematica_preview_native::block_icons(&bytes)
+                    .map(Arc::from)
+                    .map_err(|e| format!("无法生成方块图标：{e}"))
+            })
+            .clone()
+    })
+    .await
+    .map_err(|e| format!("无法生成方块图标：{e}"))?
+}
+
+/// Enumerates block ids from the bundled resource pack's blockstate files.
+fn block_catalog_from_pack(pack_path: &Path) -> Result<Vec<String>, String> {
+    let file = std::fs::File::open(pack_path).map_err(|e| format!("无法打开随附的方块资源：{e}"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("无法读取随附的方块资源：{e}"))?;
+    let mut names = std::collections::BTreeSet::new();
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|e| format!("无法读取随附的方块资源：{e}"))?;
+        let name = entry.name();
+        let Some(rest) = name.strip_prefix("assets/") else {
+            continue;
+        };
+        let Some((namespace, tail)) = rest.split_once('/') else {
+            continue;
+        };
+        let Some(relative) = tail.strip_prefix("blockstates/") else {
+            continue;
+        };
+        let Some(block) = relative.strip_suffix(".json") else {
+            continue;
+        };
+        if block.is_empty() || namespace.is_empty() {
+            continue;
+        }
+        names.insert(format!("{namespace}:{block}"));
+    }
+    Ok(names.into_iter().collect())
 }
 
 #[cfg(windows)]
@@ -285,7 +428,7 @@ fn open_folder(path: &std::path::Path) -> Result<(), String> {
     };
     if result as isize <= 32 {
         return Err(format!(
-            "Windows could not open the license folder (code {}).",
+            "Windows 无法打开许可证文件夹（错误代码 {}）。",
             result as isize
         ));
     }
@@ -294,7 +437,7 @@ fn open_folder(path: &std::path::Path) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn open_folder(_: &std::path::Path) -> Result<(), String> {
-    Err("Litematica Preview's desktop integration requires Windows.".into())
+    Err("Litematica Preview 的桌面集成仅支持 Windows。".into())
 }
 
 fn initial_path() -> Result<Option<String>, String> {
@@ -303,14 +446,14 @@ fn initial_path() -> Result<Option<String>, String> {
         return Ok(None);
     };
     if args.next().is_some() {
-        return Err("Open one schematic per window.".into());
+        return Err("每个窗口只能打开一个投影文件。".into());
     }
     let path = PathBuf::from(argument);
     let absolute = if path.is_absolute() {
         path
     } else {
         std::env::current_dir()
-            .map_err(|e| format!("Unable to resolve the schematic path: {e}"))?
+            .map_err(|e| format!("无法解析投影文件路径：{e}"))?
             .join(path)
     };
     resources::path_string(&absolute).map(Some)
@@ -347,9 +490,12 @@ fn run() -> Result<(), String> {
             register_associations,
             unregister_associations,
             show_licenses,
+            export_schematic,
+            block_catalog,
+            block_icons,
         ])
         .run(tauri::generate_context!())
-        .map_err(|e| format!("Unable to start Litematica Preview: {e}"))
+        .map_err(|e| format!("无法启动 Litematica Preview：{e}"))
 }
 
 fn main() {
@@ -363,7 +509,7 @@ fn main() {
     {
         let result = match (args.next(), args.next()) {
             (Some(port), None) => preview_process::run(&port),
-            _ => Err("Invalid decoder process arguments.".into()),
+            _ => Err("解码进程参数无效。".into()),
         };
         if let Err(error) = result {
             eprintln!("{error}");
@@ -379,12 +525,12 @@ fn main() {
         Some("--register-extensions") => Some(match remaining.as_slice() {
             [selection] => selection
                 .to_str()
-                .ok_or_else(|| "Invalid extension selection.".to_string())
+                .ok_or_else(|| "扩展名选择无效。".to_string())
                 .and_then(associations::register_extensions),
-            _ => Err("Pass a comma-separated list of supported extensions.".into()),
+            _ => Err("请传入以逗号分隔的受支持扩展名列表。".into()),
         }),
         Some("--register" | "--unregister" | "--default-apps") => {
-            Some(Err("Unexpected registration arguments.".into()))
+            Some(Err("注册参数不符合预期。".into()))
         }
         _ => None,
     };

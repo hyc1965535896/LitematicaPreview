@@ -43,7 +43,7 @@ pub(crate) struct CompactBlocksBuilder {
 impl CompactBlocksBuilder {
     pub(crate) fn new(chunk_size: Option<i32>) -> Result<Self, String> {
         if chunk_size.is_some_and(|size| size <= 0) {
-            return Err("The mesh chunk size must be positive.".into());
+            return Err("网格区块大小必须为正。".into());
         }
         Ok(Self {
             chunks: HashMap::new(),
@@ -68,7 +68,7 @@ impl CompactBlocksBuilder {
             return Ok(index);
         };
         let alias = u32::try_from(order.len())
-            .map_err(|_| "The schematic has too many source block states.")?;
+            .map_err(|_| "投影文件的源方块状态过多。")?;
         order.try_reserve(1).map_err(|error| error.to_string())?;
         order.push((self.source, index));
         Ok(alias)
@@ -92,7 +92,7 @@ impl CompactBlocksBuilder {
                     Entry::Occupied(entry) => *entry.get(),
                     Entry::Vacant(entry) => {
                         let index = u32::try_from(self.palette.len())
-                            .map_err(|_| "The schematic has too many block states.")?;
+                            .map_err(|_| "投影文件的方块状态过多。")?;
                         self.palette.try_reserve(1).map_err(|e| e.to_string())?;
                         self.palette.push(block_state_to_input_block(entry.key()));
                         entry.insert(index);
@@ -115,7 +115,7 @@ impl CompactBlocksBuilder {
             self.block_count = self
                 .block_count
                 .checked_add(1)
-                .ok_or("Block count exceeds i64.")?;
+                .ok_or("方块数量超出 i64 上限。")?;
         }
         if let Some(index) = entry.index {
             self.push_index(position, index)?;
@@ -130,7 +130,7 @@ impl CompactBlocksBuilder {
             entity.position.2.floor() as i32,
         );
         let index = u32::try_from(self.palette.len())
-            .map_err(|_| "The schematic has too many block states.")?;
+            .map_err(|_| "投影文件的方块状态过多。")?;
         self.palette.try_reserve(1).map_err(|e| e.to_string())?;
         self.palette.push(entity_to_input_block(entity));
         let index = self.source_index(index)?;
@@ -140,8 +140,8 @@ impl CompactBlocksBuilder {
     pub(crate) fn add_block_entities(&mut self, count: usize) -> Result<(), String> {
         self.block_entity_count = self
             .block_entity_count
-            .checked_add(i64::try_from(count).map_err(|_| "Block entity count exceeds i64.")?)
-            .ok_or("Block entity count exceeds i64.")?;
+            .checked_add(i64::try_from(count).map_err(|_| "方块实体数量超出 i64 上限。")?)
+            .ok_or("方块实体数量超出 i64 上限。")?;
         Ok(())
     }
 
@@ -200,9 +200,9 @@ impl CompactBlocks {
             builder.block_count = builder
                 .block_count
                 .checked_add(
-                    i64::try_from(region.count_blocks()).map_err(|_| "Block count exceeds i64.")?,
+                    i64::try_from(region.count_blocks()).map_err(|_| "方块数量超出 i64 上限。")?,
                 )
-                .ok_or("Block count exceeds i64.")?;
+                .ok_or("方块数量超出 i64 上限。")?;
             let remap = builder.register_palette(&region.get_palette())?;
             if let Some(count) = thread_count {
                 let jobs = region
@@ -225,7 +225,7 @@ impl CompactBlocks {
                             }
                             let entry = remap
                                 .get(state)
-                                .ok_or("The schematic contains an invalid palette index.")?;
+                                .ok_or("投影文件包含无效的调色板索引。")?;
                             if let Some(state) = entry.index {
                                 let (x, y, z) = region.index_to_coords(start + offset);
                                 converted.push((BlockPosition::new(x, y, z), state));
@@ -245,7 +245,7 @@ impl CompactBlocks {
                 for (index, &state) in region.blocks.iter().enumerate() {
                     let entry = remap
                         .get(state)
-                        .ok_or("The schematic contains an invalid palette index.")?;
+                        .ok_or("投影文件包含无效的调色板索引。")?;
                     if let Some(state) = entry.index {
                         let (x, y, z) = region.index_to_coords(index);
                         builder.push_index(BlockPosition::new(x, y, z), state)?;
@@ -263,6 +263,45 @@ impl CompactBlocks {
 
     pub(crate) fn block_count(&self) -> i64 {
         self.block_count
+    }
+
+    /// Distinct non-air block states with voxel counts, sorted by count
+    /// descending. Counts scan the packed chunk index arrays directly.
+    pub(crate) fn materials(&self) -> Vec<crate::MaterialEntry> {
+        let mut counts = vec![0i64; self.palette.len()];
+        for (_, blocks) in &self.chunks {
+            for (_, index) in blocks {
+                let count = &mut counts[*index as usize];
+                *count = count.saturating_add(1);
+            }
+        }
+        let mut materials: Vec<crate::MaterialEntry> = self
+            .palette
+            .iter()
+            .zip(&counts)
+            .filter(|(block, &count)| count > 0 && !block.is_air() && !block.name.starts_with("entity:"))
+            .map(|(block, &count)| crate::MaterialEntry {
+                name: block.name.clone(),
+                properties: {
+                    let mut properties: Vec<(String, String)> = block
+                        .properties
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect();
+                    properties.sort();
+                    properties
+                },
+                count,
+            })
+            .collect();
+        materials.sort_unstable_by(|left, right| {
+            right
+                .count
+                .cmp(&left.count)
+                .then_with(|| left.name.cmp(&right.name))
+                .then_with(|| left.properties.cmp(&right.properties))
+        });
+        materials
     }
 
     pub(crate) fn block_entity_count(&self) -> i64 {
@@ -303,7 +342,7 @@ impl CompactBlocks {
             })
         });
         atlas::build(pack.pack(), config, representatives.chain(actual_positions))
-            .map_err(|error| format!("Unable to prepare schematic textures: {error}"))
+            .map_err(|error| format!("无法准备投影纹理：{error}"))
     }
 
     fn context(
@@ -452,7 +491,7 @@ impl<'a> ChunkMeshes<'a> {
                     return Ok(());
                 };
                 let mesh = mesh.map_err(|error| {
-                    format!("This schematic is too detailed to preview: {error}")
+                    format!("该投影文件过于复杂，无法预览：{error}")
                 })?;
                 consume(mesh)?;
             }
@@ -465,7 +504,7 @@ impl<'a> ChunkMeshes<'a> {
             |index, cancelled| {
                 crate::parallel::check_cancelled(cancelled)?;
                 let mesh = self.mesh_at(index).map_err(|error| {
-                    format!("This schematic is too detailed to preview: {error}")
+                    format!("该投影文件过于复杂，无法预览：{error}")
                 })?;
                 crate::parallel::check_cancelled(cancelled)?;
                 Ok(mesh)

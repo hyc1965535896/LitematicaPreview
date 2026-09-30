@@ -1,0 +1,71 @@
+[
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/batch order/",
+  "new": "/批次顺序/"
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/texture offset/",
+  "new": "/纹理偏移/"
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/duplicate buffer/",
+  "new": "/重复的缓冲区/"
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/truncated|payload length/",
+  "new": "/截断|数据长度/"
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/triangle count/",
+  "new": "/三角形数量/"
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/source counts/",
+  "new": "/来源数量/"
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/bounds are reversed/",
+  "new": "/边界方向相反/"
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/incomplete triangle/",
+  "new": "/不完整的三角形/"
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/summary/",
+  "new": "/汇总/",
+  "count": 3
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/completion texture/",
+  "new": "/完成的纹理/"
+ },
+ {
+  "file": "App/src/preview-stream.test.mjs",
+  "old": "/completion mesh/",
+  "new": "/完成的网格/",
+  "count": 2
+ },
+ {
+  "file": "App/src/upload-preparation.test.mjs",
+  "old": "/previous preview page/",
+  "new": "/预览页面尚未上传/",
+  "count": 2
+ },
+ {
+  "file": "App/src/upload-preparation.test.mjs",
+  "old": "/Invalid preview preparation page/",
+  "new": "/预览准备页面无效/",
+  "count": 5
+ }
+]

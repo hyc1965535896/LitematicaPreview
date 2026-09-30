@@ -14,7 +14,7 @@ class AppErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, information: ErrorInfo) {
-    console.error("The application interface failed.", error, information.componentStack)
+    console.error("应用界面渲染失败。", error, information.componentStack)
     if (this.state.recovered === null) {
       this.setState({ error: null, recovered: error.message })
     }
@@ -28,14 +28,14 @@ class AppErrorBoundary extends Component<
           role="alert"
         >
           <h1 className="text-2xl font-bold leading-snug mb-4">
-            Litematica Preview could not display its interface.
+            Litematica Preview 无法显示其界面。
           </h1>
-          <p className="mb-4">Your schematic files have not been changed.</p>
+          <p className="mb-4">你的投影文件没有被修改。</p>
           <pre className="my-4 p-4 border border-[GrayText] rounded-md whitespace-pre-wrap break-words">
             {this.state.error}
           </pre>
           <button onClick={() => this.setState({ recovered: this.state.error, error: null })}>
-            Return home
+            返回主页
           </button>
         </main>
       )
@@ -46,7 +46,7 @@ class AppErrorBoundary extends Component<
 }
 
 const root = document.getElementById("root")
-if (!root) throw new Error("The application root element is missing.")
+if (!root) throw new Error("缺少应用根元素。")
 createRoot(root).render(
   <AppErrorBoundary>
     <App />

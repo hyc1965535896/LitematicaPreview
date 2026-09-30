@@ -9,7 +9,7 @@ pub fn register_extensions(selection: &str) -> Result<(), String> {
             .iter()
             .copied()
             .find(|extension| extension.eq_ignore_ascii_case(value.trim()))
-            .ok_or_else(|| format!("Unsupported schematic extension: {value}"))?;
+            .ok_or_else(|| format!("不受支持的投影文件扩展名：{value}"))?;
         if !selected.contains(&extension) {
             selected.push(extension);
         }
@@ -45,7 +45,7 @@ mod platform {
         match result {
             Ok(value) => Ok(Some(value)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(format!("Windows file associations: {error}")),
+            Err(error) => Err(format!("Windows 文件关联：{error}")),
         }
     }
 
@@ -76,7 +76,7 @@ mod platform {
             .map_err(|error| error.to_string())?
             .into_os_string()
             .into_string()
-            .map_err(|_| "The application path is not valid Unicode.".to_string())
+            .map_err(|_| "应用程序路径不是有效的 Unicode。".to_string())
     }
 
     fn is_other_command(command: Option<&str>, expected: &str) -> bool {
@@ -110,14 +110,14 @@ mod platform {
             if is_other_command(user_command.as_deref(), &command)
                 || is_other_command(effective_command.as_deref(), &command)
             {
-                return Err("Another copy of Litematica Preview owns the file associations. Unregister that copy before registering this one.".to_string());
+                return Err("另一份 Litematica Preview 已拥有文件关联。请先注销那份副本，再注册这一份。".to_string());
             }
         }
         if value(&user, REGISTERED_APPLICATIONS, APPLICATION_NAME)?
             .is_some_and(|path| !path.is_empty() && !path.eq_ignore_ascii_case(CAPABILITIES_KEY))
         {
             return Err(
-                "Another application owns the Litematica Preview registration.".to_string(),
+                "另一个应用占用了 Litematica Preview 的注册项。".to_string(),
             );
         }
 
@@ -145,7 +145,7 @@ mod platform {
                 )?;
             }
         }
-        set(&user, PROG_KEY, "", "Minecraft schematic")?;
+        set(&user, PROG_KEY, "", "Minecraft 投影文件")?;
         set(
             &user,
             &format!(r"{PROG_KEY}\DefaultIcon"),
@@ -170,7 +170,7 @@ mod platform {
             &user,
             CAPABILITIES_KEY,
             "ApplicationDescription",
-            "View Minecraft schematics and structures offline.",
+            "离线查看 Minecraft 投影与结构。",
         )?;
 
         for extension in selected {
@@ -267,7 +267,7 @@ mod platform {
         } as isize;
         if result <= 32 {
             return Err(format!(
-                "Could not open Windows Default Apps settings (error {result})."
+                "无法打开 Windows 默认应用设置（错误 {result}）。"
             ));
         }
         Ok(())
@@ -277,15 +277,15 @@ mod platform {
 #[cfg(not(windows))]
 mod platform {
     pub fn register(_: &[&str]) -> Result<(), String> {
-        Err("File associations are only supported on Windows.".to_string())
+        Err("仅在 Windows 上支持文件关联。".to_string())
     }
 
     pub fn unregister() -> Result<(), String> {
-        Err("File associations are only supported on Windows.".to_string())
+        Err("仅在 Windows 上支持文件关联。".to_string())
     }
 
     pub fn open_settings() -> Result<(), String> {
-        Err("Default Apps settings are only supported on Windows.".to_string())
+        Err("仅在 Windows 上支持“默认应用”设置。".to_string())
     }
 }
 

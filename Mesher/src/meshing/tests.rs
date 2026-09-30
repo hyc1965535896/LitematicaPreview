@@ -545,7 +545,7 @@ fn unseparated_dense_culler_rejects_unrepresentable_sparse_bounds_before_allocat
             .unwrap()
             .err()
             .unwrap();
-        assert!(error.starts_with("Culling"), "{error}");
+        assert!(error.starts_with("剔除"), "{error}");
     }
 }
 

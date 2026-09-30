@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use litematica_preview_native::PreviewOptions;
+use litematica_preview_native::{BlockReplacement, ExportFormat, LoadedPreview, PreviewOptions};
 use nucleation::meshing::ResourcePackSource;
 
 use crate::preview_process::DecoderProcess;
@@ -23,6 +23,8 @@ pub struct LoadOptions {
     #[serde(deserialize_with = "required_nullable")]
     thread_count: Option<u8>,
     speed_first: bool,
+    #[serde(default)]
+    replacements: Vec<BlockReplacement>,
 }
 
 fn required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -34,7 +36,7 @@ where
 }
 
 impl LoadOptions {
-    pub fn validate(self) -> Result<PreviewOptions, String> {
+    pub fn validate(self) -> Result<(PreviewOptions, Vec<BlockReplacement>), String> {
         let options = PreviewOptions {
             memory_limit_mb: self.memory_limit_mb,
             chunk_size: self.chunk_size,
@@ -42,7 +44,8 @@ impl LoadOptions {
             speed_first: self.speed_first,
         };
         options.validate()?;
-        Ok(options)
+        litematica_preview_native::validate_replacements(&self.replacements)?;
+        Ok((options, self.replacements))
     }
 }
 
@@ -87,7 +90,7 @@ impl StreamQueue {
         let mut state = self
             .state
             .lock()
-            .map_err(|_| "The preview stream is unavailable.")?;
+            .map_err(|_| "预览流不可用。")?;
         while state.queue.len() + usize::from(state.leased.is_some()) >= self.capacity
             && state.error.is_none()
         {
@@ -96,13 +99,13 @@ impl StreamQueue {
             state = self
                 .changed
                 .wait(state)
-                .map_err(|_| "The preview stream is unavailable.")?;
+                .map_err(|_| "预览流不可用。")?;
         }
         if let Some(error) = &state.error {
             return Err(error.clone());
         }
         if state.complete.is_some() || state.ended {
-            return Err("The preview stream has ended.".into());
+            return Err("预览流已结束。".into());
         }
         state.next_id += 1;
         let batch = protocol::Batch {
@@ -122,7 +125,7 @@ impl StreamQueue {
         let mut state = self
             .state
             .lock()
-            .map_err(|_| "The preview stream is unavailable.")?;
+            .map_err(|_| "预览流不可用。")?;
         if let Some(error) = &state.error {
             return Err(error.clone());
         }
@@ -145,7 +148,7 @@ impl StreamQueue {
         let mut state = self
             .state
             .lock()
-            .map_err(|_| "The preview stream is unavailable.")?;
+            .map_err(|_| "预览流不可用。")?;
         if let Some(error) = &state.error {
             return Err(error.clone());
         }
@@ -153,7 +156,7 @@ impl StreamQueue {
             || state.ended
             || state.leased.as_ref().map(|value| value.batch.batch_id) != previous
         {
-            return Err("Invalid or duplicate preview batch acknowledgement.".into());
+            return Err("预览批次确认无效或重复。".into());
         }
         state.leased = None;
         state.waiting = true;
@@ -179,7 +182,7 @@ impl StreamQueue {
             state = self
                 .changed
                 .wait(state)
-                .map_err(|_| "The preview stream is unavailable.")?;
+                .map_err(|_| "预览流不可用。")?;
         }
     }
 
@@ -187,7 +190,7 @@ impl StreamQueue {
         let state = self
             .state
             .lock()
-            .map_err(|_| "The preview stream is unavailable.")?;
+            .map_err(|_| "预览流不可用。")?;
         if let Some(error) = &state.error {
             return Err(error.clone());
         }
@@ -196,7 +199,7 @@ impl StreamQueue {
             .as_ref()
             .filter(|value| value.batch.batch_id == batch_id)
             .map(|value| Arc::clone(&value.payload))
-            .ok_or_else(|| "The preview batch is not leased or has been released.".into())
+            .ok_or_else(|| "预览批次未被租用或已释放。".into())
     }
 }
 
@@ -216,10 +219,10 @@ impl PreviewWorker {
         let mut stream = self
             .stream
             .lock()
-            .map_err(|_| "The preview stream is unavailable.")?;
+            .map_err(|_| "预览流不可用。")?;
         self.ensure_current(request_id)?;
         if stream.as_ref().is_some_and(|(id, _)| *id == request_id) {
-            return Err("The preview stream has already started.".into());
+            return Err("预览流已经启动。".into());
         }
         if let Some((_, previous)) = stream.take() {
             previous.fail("Cancelled".into());
@@ -233,13 +236,13 @@ impl PreviewWorker {
         let stream = self
             .stream
             .lock()
-            .map_err(|_| "The preview stream is unavailable.")?;
+            .map_err(|_| "预览流不可用。")?;
         self.ensure_current(request_id)?;
         stream
             .as_ref()
             .filter(|(id, _)| *id == request_id)
             .map(|(_, stream)| Arc::clone(stream))
-            .ok_or_else(|| "The preview stream has been released.".into())
+            .ok_or_else(|| "预览流已被释放。".into())
     }
 
     pub fn fail_stream(&self, request_id: u64, error: String) {
@@ -268,6 +271,7 @@ impl PreviewWorker {
         pack_path: &Path,
         request_id: u64,
         options: PreviewOptions,
+        replacements: &[BlockReplacement],
         on_progress: impl FnMut(u64, u64),
     ) -> Result<(), String> {
         options.validate()?;
@@ -278,7 +282,7 @@ impl PreviewWorker {
             let mut process = self
                 .process
                 .lock()
-                .map_err(|_| "The preview worker is unavailable. Restart the app.".to_string())?;
+                .map_err(|_| "预览工作进程不可用，请重启应用。".to_string())?;
             if !current() {
                 return Err("Cancelled".into());
             }
@@ -299,13 +303,14 @@ impl PreviewWorker {
             }
             let result = process
                 .as_mut()
-                .ok_or("The preview worker is unavailable.")?
+                .ok_or("预览工作进程不可用。")?
                 .load_stream(
                     path,
                     pack_path,
                     options.chunk_size,
                     options.thread_count,
                     options.speed_first,
+                    replacements,
                     current,
                     on_progress,
                     |offset, payload| stream.publish(offset, payload),
@@ -326,6 +331,55 @@ impl PreviewWorker {
             Ok(metadata) => stream.finish(metadata),
             Err(error) => {
                 stream.fail(error.clone());
+                Err(error)
+            }
+        }
+    }
+
+    /// Writes a replacement-applied copy of `path` through the isolated
+    /// decoder. Runs outside the preview session machinery: it neither
+    /// disturbs the active request nor publishes payloads.
+    pub fn export(
+        &self,
+        path: &Path,
+        replacements: &[BlockReplacement],
+        format: &str,
+        destination: &Path,
+        memory_limit_mb: Option<u16>,
+    ) -> Result<protocol::Summary, String> {
+        litematica_preview_native::validate_replacements(replacements)?;
+        let mut process = self
+            .process
+            .lock()
+            .map_err(|_| "预览工作进程不可用，请重启应用。".to_string())?;
+        if process
+            .as_ref()
+            .is_some_and(|process| process.memory_limit_mb() != memory_limit_mb)
+        {
+            self.worker_pid.store(0, Ordering::Release);
+            process.take();
+        }
+        if process.is_none() {
+            *process = Some(DecoderProcess::spawn(memory_limit_mb)?);
+        }
+        self.worker_pid
+            .store(process.as_ref().unwrap().pid(), Ordering::Release);
+        let result = process
+            .as_mut()
+            .ok_or("预览工作进程不可用。")?
+            .export(
+                path,
+                replacements,
+                format,
+                destination,
+                || true,
+            );
+        match result {
+            Ok(Ok(summary)) => Ok(summary),
+            Ok(Err(error)) => Err(error),
+            Err(error) => {
+                self.worker_pid.store(0, Ordering::Release);
+                process.take();
                 Err(error)
             }
         }
@@ -376,6 +430,7 @@ impl PreviewWorker {
         pack_path: &Path,
         request_id: u64,
         options: PreviewOptions,
+        replacements: &[BlockReplacement],
         on_progress: impl FnMut(u64, u64),
     ) -> Result<protocol::Metadata, String> {
         options.validate()?;
@@ -383,7 +438,7 @@ impl PreviewWorker {
         let mut process = self
             .process
             .lock()
-            .map_err(|_| "The preview worker is unavailable. Restart the app.".to_string())?;
+            .map_err(|_| "预览工作进程不可用，请重启应用。".to_string())?;
         self.ensure_current(request_id)?;
         if process
             .as_ref()
@@ -402,13 +457,14 @@ impl PreviewWorker {
         self.active_request.store(request_id, Ordering::Release);
         let result = process
             .as_mut()
-            .ok_or("The preview worker is unavailable.")?
+            .ok_or("预览工作进程不可用。")?
             .load(
                 path,
                 pack_path,
                 options.chunk_size,
                 options.thread_count,
                 options.speed_first,
+                replacements,
                 || self.ensure_current(request_id).is_ok(),
                 on_progress,
             );
@@ -451,12 +507,12 @@ impl PreviewWorker {
             let stored = self
                 .payload
                 .lock()
-                .map_err(|_| "The preview buffers are unavailable.")?;
+                .map_err(|_| "预览缓冲区不可用。")?;
             self.ensure_current(request_id)?;
             let (_, payload) = stored
                 .as_ref()
                 .filter(|(id, _)| *id == request_id)
-                .ok_or("The preview buffers have been released.")?;
+                .ok_or("预览缓冲区已被释放。")?;
             Arc::clone(payload)
         };
         // Release the publication lock before copying the requested packed ranges.
@@ -516,7 +572,7 @@ impl PreviewWorker {
         let mut stored = self
             .payload
             .lock()
-            .map_err(|_| "The preview buffers are unavailable.")?;
+            .map_err(|_| "预览缓冲区不可用。")?;
         self.ensure_current(request_id)?;
         let metadata = payload.metadata.clone();
         *stored = Some((request_id, Arc::new(payload)));
@@ -800,6 +856,7 @@ mod tests {
         serde_json::from_value::<LoadOptions>(value)
             .map_err(|error| error.to_string())?
             .validate()
+            .map(|(options, _)| options)
     }
 
     #[test]
@@ -957,8 +1014,9 @@ pub(crate) fn decode(
     pack_path: &Path,
     pack: &mut Option<ResourcePackSource>,
     options: PreviewOptions,
+    replacements: &[BlockReplacement],
     stream: &mut (impl Read + Write),
-) -> Result<litematica_preview_native::PreviewInfo, String> {
+) -> Result<LoadedPreview, String> {
     options.validate()?;
     let result = catch_unwind(AssertUnwindSafe(|| {
         let encoder = RefCell::new(protocol::Encoder::new(stream));
@@ -969,14 +1027,15 @@ pub(crate) fn decode(
             let bytes = read_file(pack_path, &current)?;
             *pack = Some(
                 ResourcePackSource::from_bytes(&bytes)
-                    .map_err(|e| format!("The bundled block resources are invalid: {e}"))?,
+                    .map_err(|e| format!("随附的方块资源无效：{e}"))?,
             );
         }
         litematica_preview_native::load_chunks(
             &data,
             pack.as_ref()
-                .ok_or("The bundled block resources are unavailable.")?,
+                .ok_or("随附的方块资源不可用。")?,
             options,
+            replacements,
             |preview| encoder.borrow_mut().chunk(preview),
             |completed, total| {
                 let now = Instant::now();
@@ -995,6 +1054,43 @@ pub(crate) fn decode(
             current,
         )
     }));
+    finish_catch_unwind(pack, result)
+}
+
+/// Worker-side export: decode, apply replacements, serialize, and write the
+/// destination file. The resource pack is not needed for re-serialization.
+pub(crate) fn export_to_file(
+    path: &Path,
+    replacements: &[BlockReplacement],
+    format: &str,
+    destination: &Path,
+) -> Result<LoadedPreview, String> {
+    litematica_preview_native::validate_replacements(replacements)?;
+    let format = ExportFormat::from_extension(format)
+        .ok_or_else(|| format!("不受支持的导出格式：{format}"))?;
+    let data = read_file(path, &|| Ok(()))?;
+    let exported = litematica_preview_native::export_schematic(&data, replacements, format)?;
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("无法创建导出目录：{e}"))?;
+    }
+    let mut temp = destination.to_path_buf();
+    temp.set_extension("part");
+    std::fs::write(&temp, &exported.data).map_err(|e| format!("无法写入导出文件：{e}"))?;
+    std::fs::rename(&temp, destination).map_err(|e| format!("无法完成导出文件：{e}"))?;
+    Ok(LoadedPreview {
+        info: litematica_preview_native::PreviewInfo {
+            block_count: exported.block_count,
+            ..litematica_preview_native::PreviewInfo::default()
+        },
+        materials: Vec::new(),
+        replaced: exported.replaced,
+    })
+}
+
+fn finish_catch_unwind(
+    pack: &mut Option<ResourcePackSource>,
+    result: std::thread::Result<Result<LoadedPreview, String>>,
+) -> Result<LoadedPreview, String> {
     result.unwrap_or_else(|panic| {
         // Discard native state mutated during the panic.
         *pack = None;
@@ -1004,18 +1100,18 @@ pub(crate) fn decode(
             .or_else(|| panic.downcast_ref::<&str>().copied())
             .unwrap_or("Unknown native panic");
         Err(format!(
-            "The decoder encountered an internal error: {detail}"
+            "解码器遇到内部错误：{detail}"
         ))
     })
 }
 
 fn read_file(path: &Path, current: impl Fn() -> Result<(), String>) -> Result<Vec<u8>, String> {
-    let file = File::open(path).map_err(|e| format!("Unable to open {}: {e}", path.display()))?;
+    let file = File::open(path).map_err(|e| format!("无法打开 {}：{e}", path.display()))?;
     let metadata = file
         .metadata()
-        .map_err(|e| format!("Unable to inspect {}: {e}", path.display()))?;
+        .map_err(|e| format!("无法检查 {}：{e}", path.display()))?;
     if !metadata.is_file() {
-        return Err("Choose a schematic file, not a folder or device.".into());
+        return Err("请选择投影文件，而不是文件夹或设备。".into());
     }
     read_bytes(file, metadata.len(), current)
 }
@@ -1026,12 +1122,12 @@ fn read_bytes(
     current: impl Fn() -> Result<(), String>,
 ) -> Result<Vec<u8>, String> {
     if declared_length == 0 {
-        return Err("Choose a nonempty schematic.".into());
+        return Err("请选择非空的投影文件。".into());
     }
     usize::try_from(declared_length)
         .ok()
         .filter(|length| *length <= isize::MAX as usize)
-        .ok_or("The file exceeds this platform's addressable memory.")?;
+        .ok_or("文件超出了此平台可寻址的内存。")?;
     // Size the allocation from bytes read rather than stale or sparse-file metadata.
     let mut bytes = Vec::new();
     let mut chunk = [0u8; 64 * 1_024];
@@ -1051,7 +1147,7 @@ fn read_bytes(
         bytes.extend_from_slice(&chunk[..count]);
     }
     if bytes.is_empty() {
-        return Err("Choose a nonempty schematic.".into());
+        return Err("请选择非空的投影文件。".into());
     }
     Ok(bytes)
 }

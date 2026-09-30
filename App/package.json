@@ -13,6 +13,7 @@
   "dependencies": {
     "@fluentui/react-components": "^9.74.8",
     "@fluentui/react-icons": "^2.0.0",
+    "@fluentui/react-motion": "9.16.3",
     "@tauri-apps/api": "^2.0.0",
     "gl-matrix": "^3.4.4",
     "react": "^19.2.0",

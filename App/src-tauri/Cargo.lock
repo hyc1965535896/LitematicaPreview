@@ -2073,12 +2073,14 @@ dependencies = [
  "tauri-plugin-dialog",
  "windows-sys 0.61.2",
  "winreg 0.56.0",
+ "zip",
 ]
 
 [[package]]
 name = "litematica-preview-native"
 version = "0.3.0"
 dependencies = [
+ "base64 0.21.7",
  "flate2",
  "image",
  "nucleation",
@@ -2086,7 +2088,9 @@ dependencies = [
  "regex",
  "rustc-hash",
  "schematic-mesher",
+ "serde",
  "serde_json",
+ "zip",
 ]
 
 [[package]]

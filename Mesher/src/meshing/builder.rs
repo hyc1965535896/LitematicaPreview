@@ -136,7 +136,7 @@ pub(super) fn mesh(
         for material in materials {
             if material.texture_png.is_empty() {
                 return Err(format!(
-                    "Greedy material {} has no texture.",
+                    "贪心合并材质 {} 没有对应纹理。",
                     material.texture_path
                 ));
             }
@@ -177,18 +177,18 @@ fn validate_culler_grid(context: &[(BlockPosition, &InputBlock)]) -> Result<(), 
     for axis in 0..3 {
         let padded_min = min[axis]
             .checked_sub(1)
-            .ok_or("Culling bounds exceed i32 coordinates.")?;
+            .ok_or("剔除边界超出 i32 坐标范围。")?;
         let padded_max = max[axis]
             .checked_add(1)
-            .ok_or("Culling bounds exceed i32 coordinates.")?;
+            .ok_or("剔除边界超出 i32 坐标范围。")?;
         let size = padded_max
             .checked_sub(padded_min)
             .and_then(|span| span.checked_add(1))
-            .ok_or("Culling dimensions exceed i32 representation.")?;
+            .ok_or("剔除尺寸超出 i32 表示范围。")?;
         volume = volume
             .checked_mul(size as usize)
             .filter(|&value| value <= isize::MAX as usize)
-            .ok_or("Culling grid exceeds addressable memory.")?;
+            .ok_or("剔除网格超出可寻址内存。")?;
     }
     Ok(())
 }
@@ -208,7 +208,7 @@ fn collect_pack_animations(
         };
         let Some(region) = atlas.get_region(path) else {
             return Err(format!(
-                "Animated texture {path} is absent from the shared atlas."
+                "动画纹理 {path} 不在共享图集中。"
             ));
         };
         let atlas_x = (region.u_min * atlas.width as f32).round() as u32;
@@ -260,7 +260,7 @@ fn validate_atlas(
         })
     {
         return Err(
-            "A mesh chunk changed the shared texture atlas; texture discovery is incomplete."
+            "某个网格区块更改了共享纹理图集；纹理发现不完整。"
                 .into(),
         );
     }
@@ -273,13 +273,13 @@ fn append_layer(target: &mut MeshLayer, mut source: MeshLayer) -> Result<(), Str
         return Ok(());
     }
     let offset =
-        u32::try_from(target.positions.len()).map_err(|_| "Too many vertices in a mesh chunk.")?;
+        u32::try_from(target.positions.len()).map_err(|_| "网格区块中的顶点过多。")?;
     let total = target
         .positions
         .len()
         .checked_add(source.positions.len())
-        .ok_or("Too many vertices in a mesh chunk.")?;
-    u32::try_from(total).map_err(|_| "Too many vertices in a mesh chunk.")?;
+        .ok_or("网格区块中的顶点过多。")?;
+    u32::try_from(total).map_err(|_| "网格区块中的顶点过多。")?;
     target.positions.append(&mut source.positions);
     target.normals.append(&mut source.normals);
     target.uvs.append(&mut source.uvs);

@@ -40,7 +40,7 @@ impl Resources {
         #[cfg(not(dev))]
         let _ = source;
         Err(format!(
-            "The bundled {bundled} resource is missing. Reinstall the complete app."
+            "随附的 {bundled} 资源缺失，请重新安装完整的应用。"
         ))
     }
 
@@ -51,14 +51,14 @@ impl Resources {
     pub fn demos(&self) -> Result<Vec<Demo>, String> {
         let directory = self.resolve("Demos", "Fixtures/Demos")?;
         let entries = std::fs::read_dir(&directory)
-            .map_err(|e| format!("Unable to read the bundled demos: {e}"))?;
+            .map_err(|e| format!("无法读取内置示例：{e}"))?;
         let mut demos = Vec::new();
         for entry in entries {
-            let entry = entry.map_err(|e| format!("Unable to read a bundled demo: {e}"))?;
+            let entry = entry.map_err(|e| format!("无法读取某个内置示例：{e}"))?;
             let path = entry.path();
             if !entry
                 .file_type()
-                .map_err(|e| format!("Unable to inspect a bundled demo: {e}"))?
+                .map_err(|e| format!("无法检查某个内置示例：{e}"))?
                 .is_file()
             {
                 continue;
@@ -75,7 +75,7 @@ impl Resources {
             let name = path
                 .file_stem()
                 .and_then(|value| value.to_str())
-                .ok_or("A bundled demo has an invalid filename.")?
+                .ok_or("某个内置示例的文件名无效。")?
                 .to_string();
             demos.push(Demo {
                 name,
@@ -100,5 +100,5 @@ impl Resources {
 pub fn path_string(path: &Path) -> Result<String, String> {
     path.to_str()
         .map(str::to_owned)
-        .ok_or_else(|| "This file path cannot be represented as Unicode.".into())
+        .ok_or_else(|| "此文件路径无法用 Unicode 表示。".into())
 }

@@ -156,6 +156,7 @@ fn sparse_preview_avoids_dense_volume_and_explicit_decode_avoids_a_second_array(
             &bytes,
             &pack,
             PreviewOptions::default(),
+            &[],
             |preview| {
                 chunks += 1;
                 assert_eq!(preview.info.block_count, 3);
@@ -165,7 +166,8 @@ fn sparse_preview_avoids_dense_volume_and_explicit_decode_avoids_a_second_array(
             |_, _| Ok(()),
             || Ok(()),
         )
-        .unwrap();
+        .unwrap()
+        .info;
         let peak = PEAK.load(Ordering::Relaxed).saturating_sub(baseline);
         assert_eq!(chunks, 3);
         assert_eq!(info.block_count, 3);

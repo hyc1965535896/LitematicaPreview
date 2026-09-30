@@ -26,7 +26,7 @@ fn load_structure_nbt(
     limits: &DecodeLimits,
 ) -> Result<UniversalSchematic, DecodeFailure> {
     let unreadable =
-        || DecodeFailure::Format("This file is not a Java structure block container.".to_string());
+        || DecodeFailure::Format("此文件不是 Java 结构方块容器。".to_string());
 
     let size = triple(&root, "size").ok_or_else(unreadable)?;
     if size.iter().any(|axis| *axis <= 0) {
@@ -91,7 +91,7 @@ fn load_structure_nbt(
             .any(|(axis, value)| *value < 0 || *value >= size[axis])
         {
             return Err(DecodeFailure::Format(format!(
-                "This structure has a block at {position:?}, outside its {size:?} size."
+                "此结构在 {position:?} 处有一个方块，超出了其 {size:?} 的尺寸。"
             )));
         }
         let Some(NbtTag::Int(index)) = entry.inner().get("state") else {

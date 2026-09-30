@@ -1,0 +1,21 @@
+[
+  {"file": "App/src-tauri/tauri.conf.json", "old": "\"languages\": [\"English\"]", "new": "\"languages\": [\"SimpChinese\"]"},
+  {"file": "scripts/installer-hooks.nsh", "old": "!insertmacro MUI_HEADER_TEXT \"Choose file associations\" \"Optional settings for Litematica Preview\"", "new": "!insertmacro MUI_HEADER_TEXT \"选择文件关联\" \"Litematica Preview 的可选设置\""},
+  {"file": "scripts/installer-hooks.nsh", "old": "Setup could not show the file-association options. Please run setup again.", "new": "安装程序无法显示文件关联选项，请重新运行安装程序。"},
+  {"file": "scripts/installer-hooks.nsh", "old": "Windows keeps your current default apps. Add Litematica Preview to Open with for selected formats, then choose defaults in Windows Settings.", "new": "Windows 会保留你当前的默认应用。安装程序会把 Litematica Preview 添加到所选格式的“打开方式”中，之后可在 Windows 设置中选择默认应用。"},
+  {"file": "scripts/installer-hooks.nsh", "old": "Register Litematica Preview for these file types", "new": "为这些文件类型注册 Litematica Preview"},
+  {"file": "scripts/installer-hooks.nsh", "old": "Open Default Apps Settings after installation", "new": "安装后打开“默认应用”设置"},
+  {"file": "scripts/installer-hooks.nsh", "old": "Select at least one file type, or uncheck registration to continue.", "new": "请至少选择一种文件类型，或取消勾选注册后继续。"},
+  {"file": "scripts/installer-hooks.nsh", "old": "DetailPrint \"Registering selected file types: $LPSelectedExtensions\"", "new": "DetailPrint \"正在注册所选文件类型：$LPSelectedExtensions\""},
+  {"file": "scripts/installer-hooks.nsh", "old": "DetailPrint \"File registration is off. Removing only associations owned by this installation.\"", "new": "DetailPrint \"未启用文件注册。仅移除本次安装所拥有的关联。\""},
+  {"file": "scripts/installer-hooks.nsh", "old": "Litematica Preview was installed, but setup could not start the file-association update. You can change file associations from the app.", "new": "Litematica Preview 已安装，但安装程序无法启动文件关联更新。你可以稍后在应用内更改文件关联。"},
+  {"file": "scripts/installer-hooks.nsh", "old": "DetailPrint \"File-association update returned $0.\"", "new": "DetailPrint \"文件关联更新返回了 $0。\""},
+  {"file": "scripts/installer-hooks.nsh", "old": "Litematica Preview was installed, but file associations could not be fully updated. Another installed copy may own them. You can change file associations from the app.", "new": "Litematica Preview 已安装，但文件关联未能完全更新。可能是另一份已安装副本占用了关联。你可以稍后在应用内更改文件关联。"},
+  {"file": "scripts/installer-hooks.nsh", "old": "DetailPrint \"File-association choices applied. Windows default-app choices were preserved.\"", "new": "DetailPrint \"文件关联选项已应用。Windows 的默认应用选择保持不变。\""},
+  {"file": "scripts/installer-hooks.nsh", "old": "DetailPrint \"Opening Windows Default Apps Settings as requested.\"", "new": "DetailPrint \"正在按要求打开 Windows“默认应用”设置。\""},
+  {"file": "scripts/installer-hooks.nsh", "old": "Setup could not open Windows Settings. Open Settings > Apps > Default apps to choose Litematica Preview.", "new": "安装程序无法打开 Windows 设置。请打开“设置 > 应用 > 默认应用”来选择 Litematica Preview。"},
+  {"file": "scripts/installer-hooks.nsh", "old": "Windows Settings could not be opened. Open Settings > Apps > Default apps to choose Litematica Preview.", "new": "无法打开 Windows 设置。请打开“设置 > 应用 > 默认应用”来选择 Litematica Preview。"},
+  {"file": "scripts/installer-hooks.nsh", "old": "Could not start file-association cleanup. The app has not been removed.", "new": "无法启动文件关联清理，应用尚未被卸载。"},
+  {"file": "scripts/installer-hooks.nsh", "old": "Could not clean up file associations. The app has not been removed.", "new": "无法清理文件关联，应用尚未被卸载。"},
+  {"file": "scripts/installer.nsi", "old": "\"Open with ${PRODUCTNAME}\"", "new": "\"用 ${PRODUCTNAME} 打开\""}
+]

@@ -90,6 +90,7 @@ fn public_preview_preserves_dense_fixture_counts_and_geometry_for_all_formats() 
                 chunk_size: None,
                 ..PreviewOptions::default()
             },
+            &[],
             |_| Ok(()),
             |completed, total| {
                 progress.push((completed, total));
@@ -97,7 +98,8 @@ fn public_preview_preserves_dense_fixture_counts_and_geometry_for_all_formats() 
             },
             || Ok(()),
         )
-        .unwrap_or_else(|error| panic!("{name}: {error}"));
+        .unwrap_or_else(|error| panic!("{name}: {error}"))
+        .info;
         assert_eq!(progress, [(0, 1), (1, 1)], "{name}");
         assert_eq!(actual.block_count, expected.block_count, "{name}");
         assert_eq!(
@@ -131,6 +133,7 @@ fn native_stream_counts_visible_bounds_and_stops_between_chunks() {
         &data,
         &pack,
         PreviewOptions::default(),
+        &[],
         |preview| {
             chunk_count += 1;
             triangles += preview.info.triangle_count;
@@ -142,7 +145,8 @@ fn native_stream_counts_visible_bounds_and_stops_between_chunks() {
         },
         || Ok(()),
     )
-    .unwrap();
+    .unwrap()
+    .info;
     assert_eq!(chunk_count, 2);
     assert_eq!(progress, [(0, 2), (1, 2), (2, 2)]);
     // Cave and void air count as blocks but do not emit geometry, affect visible
@@ -158,6 +162,7 @@ fn native_stream_counts_visible_bounds_and_stops_between_chunks() {
         &data,
         &pack,
         PreviewOptions::default(),
+        &[],
         |_| {
             consumed.set(consumed.get() + 1);
             Ok(())
@@ -267,11 +272,13 @@ fn negative_litematic_extents_preserve_entity_origin_and_visible_geometry() {
                 chunk_size: None,
                 ..PreviewOptions::default()
             },
+            &[],
             |_| Ok(()),
             |_, _| Ok(()),
             || Ok(()),
         )
         .unwrap()
+        .info
     };
     let expected = preview(&positive);
     let actual = preview(&negative);
@@ -295,6 +302,7 @@ fn consumer_failure_stops_streaming_without_accepting_another_chunk() {
         &data,
         &pack,
         PreviewOptions::default(),
+        &[],
         |_| {
             consumed += 1;
             Err("transport closed".into())
@@ -336,6 +344,7 @@ fn requested_chunk_sizes_and_disabled_separation_control_delivered_groups() {
                 thread_count: None,
                 speed_first: false,
             },
+            &[],
             |preview| {
                 assert_eq!(preview.mesh.chunk_coord.is_some(), chunk_size.is_some());
                 groups += 1;
@@ -344,7 +353,8 @@ fn requested_chunk_sizes_and_disabled_separation_control_delivered_groups() {
             |_, _| Ok(()),
             || Ok(()),
         )
-        .unwrap();
+        .unwrap()
+        .info;
         assert_eq!(groups, expected_groups, "chunk size {chunk_size:?}");
         assert_eq!(info.block_count, 6);
         assert_eq!(info.triangle_count, 72);
@@ -362,11 +372,13 @@ fn unseparated_greedy_mesh_merges_across_the_default_chunk_boundary() {
         &data,
         &pack,
         PreviewOptions::default(),
+        &[],
         |_| Ok(()),
         |_, _| Ok(()),
         || Ok(()),
     )
-    .unwrap();
+    .unwrap()
+    .info;
     let mut groups = 0;
     let whole = load_chunks(
         &data,
@@ -375,6 +387,7 @@ fn unseparated_greedy_mesh_merges_across_the_default_chunk_boundary() {
             chunk_size: None,
             ..PreviewOptions::default()
         },
+        &[],
         |preview| {
             groups += 1;
             assert_eq!(preview.mesh.chunk_coord, None);
@@ -383,7 +396,8 @@ fn unseparated_greedy_mesh_merges_across_the_default_chunk_boundary() {
         |_, _| Ok(()),
         || Ok(()),
     )
-    .unwrap();
+    .unwrap()
+    .info;
     assert_eq!(groups, 1);
     assert_eq!(whole.triangle_count, 12);
     assert!(whole.triangle_count < separated.triangle_count);
@@ -454,6 +468,7 @@ fn invalid_options_fail_before_decoding_or_consuming_input() {
             &[],
             &pack,
             options,
+            &[],
             |_| panic!("invalid options reached consumer"),
             |_, _| Ok(()),
             || panic!("invalid options reached decoding"),

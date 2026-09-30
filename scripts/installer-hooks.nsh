@@ -105,17 +105,17 @@ Function LPAssociationPage
     Abort
   ${EndIf}
 
-  !insertmacro MUI_HEADER_TEXT "Choose file associations" "Optional settings for Litematica Preview"
+  !insertmacro MUI_HEADER_TEXT "选择文件关联" "Litematica Preview 的可选设置"
   nsDialogs::Create 1018
   Pop $LPAssociationDialog
   ${If} $LPAssociationDialog == error
-    MessageBox MB_OK|MB_ICONSTOP "Setup could not show the file-association options. Please run setup again."
+    MessageBox MB_OK|MB_ICONSTOP "安装程序无法显示文件关联选项，请重新运行安装程序。"
     Quit
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 0 100% 28u "Windows keeps your current default apps. Add Litematica Preview to Open with for selected formats, then choose defaults in Windows Settings."
+  ${NSD_CreateLabel} 0 0 100% 28u "Windows 会保留你当前的默认应用。安装程序会把 Litematica Preview 添加到所选格式的“打开方式”中，之后可在 Windows 设置中选择默认应用。"
   Pop $LPEventControl
-  ${NSD_CreateCheckbox} 0 34u 100% 12u "Register Litematica Preview for these file types"
+  ${NSD_CreateCheckbox} 0 34u 100% 12u "为这些文件类型注册 Litematica Preview"
   Pop $LPRegisterControl
   ${NSD_SetState} $LPRegisterControl $LPRegisterState
   ${NSD_OnClick} $LPRegisterControl LPOptionsChanged
@@ -124,7 +124,7 @@ Function LPAssociationPage
   !insertmacro LP_FOREACH_EXTENSION LP_CREATE_EXTENSION
   !undef LP_EXTENSION_INDEX
 
-  ${NSD_CreateCheckbox} 0 124u 100% 16u "Open Default Apps Settings after installation"
+  ${NSD_CreateCheckbox} 0 124u 100% 16u "安装后打开“默认应用”设置"
   Pop $LPSettingsControl
   ${NSD_SetState} $LPSettingsControl $LPSettingsState
   ${NSD_OnClick} $LPSettingsControl LPOptionsChanged
@@ -136,7 +136,7 @@ Function LPAssociationPageLeave
   Call LPCaptureOptions
   ${If} $LPRegisterState == ${BST_CHECKED}
   ${AndIf} $LPSelectedExtensions == ""
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Select at least one file type, or uncheck registration to continue."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "请至少选择一种文件类型，或取消勾选注册后继续。"
     Abort
   ${EndIf}
 FunctionEnd
@@ -153,21 +153,21 @@ Function LPApplyPostInstall
   Push $0
   ClearErrors
   ${If} $LPRegisterState == ${BST_CHECKED}
-    DetailPrint "Registering selected file types: $LPSelectedExtensions"
+    DetailPrint "正在注册所选文件类型：$LPSelectedExtensions"
     ExecWait '"$INSTDIR\LitematicaPreview.exe" --register-extensions "$LPSelectedExtensions"' $0
   ${Else}
-    DetailPrint "File registration is off. Removing only associations owned by this installation."
+    DetailPrint "未启用文件注册。仅移除本次安装所拥有的关联。"
     ExecWait '"$INSTDIR\LitematicaPreview.exe" --unregister' $0
   ${EndIf}
   ${If} ${Errors}
-    StrCpy $LPAssociationWarning "Litematica Preview was installed, but setup could not start the file-association update. You can change file associations from the app."
+    StrCpy $LPAssociationWarning "Litematica Preview 已安装，但安装程序无法启动文件关联更新。你可以稍后在应用内更改文件关联。"
     Call LPShowAssociationWarning
   ${ElseIf} $0 != 0
-    DetailPrint "File-association update returned $0."
-    StrCpy $LPAssociationWarning "Litematica Preview was installed, but file associations could not be fully updated. Another installed copy may own them. You can change file associations from the app."
+    DetailPrint "文件关联更新返回了 $0。"
+    StrCpy $LPAssociationWarning "Litematica Preview 已安装，但文件关联未能完全更新。可能是另一份已安装副本占用了关联。你可以稍后在应用内更改文件关联。"
     Call LPShowAssociationWarning
   ${Else}
-    DetailPrint "File-association choices applied. Windows default-app choices were preserved."
+    DetailPrint "文件关联选项已应用。Windows 的默认应用选择保持不变。"
   ${EndIf}
 
   ${IfNot} ${Silent}
@@ -175,13 +175,13 @@ Function LPApplyPostInstall
   ${AndIf} $LPRegisterState == ${BST_CHECKED}
   ${AndIf} $LPSettingsState == ${BST_CHECKED}
     ClearErrors
-    DetailPrint "Opening Windows Default Apps Settings as requested."
+    DetailPrint "正在按要求打开 Windows“默认应用”设置。"
     ExecWait '"$INSTDIR\LitematicaPreview.exe" --default-apps' $0
     ${If} ${Errors}
-      StrCpy $LPAssociationWarning "Setup could not open Windows Settings. Open Settings > Apps > Default apps to choose Litematica Preview."
+      StrCpy $LPAssociationWarning "安装程序无法打开 Windows 设置。请打开“设置 > 应用 > 默认应用”来选择 Litematica Preview。"
       Call LPShowAssociationWarning
     ${ElseIf} $0 != 0
-      StrCpy $LPAssociationWarning "Windows Settings could not be opened. Open Settings > Apps > Default apps to choose Litematica Preview."
+      StrCpy $LPAssociationWarning "无法打开 Windows 设置。请打开“设置 > 应用 > 默认应用”来选择 Litematica Preview。"
       Call LPShowAssociationWarning
     ${EndIf}
   ${EndIf}
@@ -209,10 +209,10 @@ Function un.LPCleanupAssociationsBeforeUninstall
   ExecWait '"$INSTDIR\LitematicaPreview.exe" --unregister' $0
   ${If} ${Errors}
     Pop $0
-    Abort "Could not start file-association cleanup. The app has not been removed."
+    Abort "无法启动文件关联清理，应用尚未被卸载。"
   ${ElseIf} $0 != 0
     Pop $0
-    Abort "Could not clean up file associations. The app has not been removed."
+    Abort "无法清理文件关联，应用尚未被卸载。"
   ${EndIf}
   ClearErrors
   Pop $0

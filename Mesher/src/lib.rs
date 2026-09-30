@@ -4,9 +4,31 @@ use nucleation::meshing::{MeshConfig, MeshLayer, MeshOutput, ResourcePackSource}
 use schematic_mesher::BoundingBox;
 
 mod decode;
+mod export;
+mod icons;
 mod meshing;
 mod parallel;
+mod replace;
 pub use decode::{decode, DecodeFailure};
+pub use export::{export_schematic, ExportFormat};
+pub use icons::{block_icons, BlockIcon};
+pub use replace::{apply_replacements, validate_replacements, BlockReplacement, MAX_REPLACEMENTS};
+
+/// One distinct block state in the loaded schematic with its voxel count.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct MaterialEntry {
+    pub name: String,
+    pub properties: Vec<(String, String)>,
+    pub count: i64,
+}
+
+/// Result of a complete preview load: mesh summary plus the material list
+/// computed from the same decoded (and replacement-applied) model.
+pub struct LoadedPreview {
+    pub info: PreviewInfo,
+    pub materials: Vec<MaterialEntry>,
+    pub replaced: i64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PreviewOptions {
@@ -33,26 +55,26 @@ impl PreviewOptions {
             .memory_limit_mb
             .is_some_and(|limit| !(2048..=8192).contains(&limit))
         {
-            return Err("The memory limit must be an integer from 2048 to 8192 MB.".into());
+            return Err("内存上限必须是 2048 到 8192 MB 之间的整数。".into());
         }
         if self
             .chunk_size
             .is_some_and(|size| !matches!(size, 16 | 32 | 64 | 128 | 256))
         {
-            return Err("The chunk size must be 16, 32, 64, 128 or 256 blocks.".into());
+            return Err("区块大小必须是 16、32、64、128 或 256 个方块。".into());
         }
         let max = max_worker_threads();
         if let Some(count) = self.thread_count {
             if self.chunk_size.is_none() {
-                return Err("Parallel preview requires chunking to be enabled.".into());
+                return Err("并行预览需要启用分块。".into());
             }
             if !(2..=max).contains(&count) {
-                return Err(format!("The worker thread count must be from 2 to {max}."));
+                return Err(format!("工作线程数必须在 2 到 {max} 之间。"));
             }
         }
         if self.speed_first {
             if self.thread_count.is_none() {
-                return Err("Speed-first preview requires multithreading to be enabled.".into());
+                return Err("速度优先预览需要启用多线程。".into());
             }
         }
         Ok(())
@@ -121,32 +143,36 @@ pub fn load_chunks(
     data: &[u8],
     pack: &ResourcePackSource,
     options: PreviewOptions,
+    replacements: &[BlockReplacement],
     mut consume: impl FnMut(Preview) -> Result<(), String>,
     mut on_progress: impl FnMut(usize, usize) -> Result<(), String>,
     current: impl Fn() -> Result<(), String>,
-) -> Result<PreviewInfo, String> {
+) -> Result<LoadedPreview, String> {
     options.validate()?;
+    validate_replacements(replacements)?;
     current()?;
     if data.is_empty() {
-        return Err("Choose a nonempty schematic.".into());
+        return Err("请选择非空的投影文件。".into());
     }
     let chunk_size = options.chunk_size.map(i32::from);
-    let source = decode::decode_preview(
+    let (source, replaced) = decode::decode_preview(
         data,
         chunk_size,
         options.thread_count,
         options.speed_first,
+        replacements,
         &current,
     )?;
     current()?;
+    let materials = source.materials();
     let block_count = source.block_count();
     let block_entity_count = source.block_entity_count();
     if block_count == 0 {
-        return Err("The schematic must contain at least one block.".into());
+        return Err("投影文件必须至少包含一个方块。".into());
     }
     let total = source.chunk_count();
     if total == 0 {
-        return Err("The schematic contains no visible geometry.".into());
+        return Err("投影文件不包含可见的几何体。".into());
     }
     on_progress(0, total)?;
     let mut chunks =
@@ -176,15 +202,15 @@ pub fn load_chunks(
             info.triangle_count = info
                 .triangle_count
                 .checked_add(preview.info.triangle_count)
-                .ok_or("The schematic has too many triangles.")?;
+                .ok_or("投影文件的三角面过多。")?;
             info.part_count = info
                 .part_count
                 .checked_add(preview.info.part_count)
-                .ok_or("The schematic has too many mesh parts.")?;
+                .ok_or("投影文件的网格部件过多。")?;
             info.texture_count = info
                 .texture_count
                 .checked_add(preview.info.texture_count - 1)
-                .ok_or("The schematic has too many textures.")?;
+                .ok_or("投影文件的纹理过多。")?;
             for axis in 0..3 {
                 info.min[axis] = info.min[axis].min(preview.info.min[axis]);
                 info.max[axis] = info.max[axis].max(preview.info.max[axis]);
@@ -198,10 +224,14 @@ pub fn load_chunks(
         &current,
     )?;
     if info.part_count == 0 {
-        return Err("The schematic contains no visible geometry.".into());
+        return Err("投影文件不包含可见的几何体。".into());
     }
     on_progress(completed, total)?;
-    Ok(info)
+    Ok(LoadedPreview {
+        info,
+        materials,
+        replaced,
+    })
 }
 
 pub fn prepare(
@@ -221,22 +251,22 @@ pub fn prepare(
             || layer.indices.len() % 3 != 0
             || layer.indices.iter().any(|&i| i as usize >= n)
         {
-            return Err("The mesher produced invalid or oversized geometry.".into());
+            return Err("网格生成器产生了无效或过大的几何体。".into());
         }
         triangle_count += (layer.indices.len() / 3) as u64;
         part_count += 1;
     }
     let bounds =
         BoundingBox::from_points(parts(&mesh).flat_map(|(p, _, _)| p.positions.iter().copied()))
-            .ok_or("The schematic contains no visible geometry.")?;
+            .ok_or("投影文件不包含可见的几何体。")?;
     if bounds.min.iter().chain(&bounds.max).any(|v| !v.is_finite()) {
-        return Err("The mesher produced invalid bounds.".into());
+        return Err("网格生成器产生了无效的边界。".into());
     }
     let mut textures = Vec::with_capacity(mesh.greedy_materials.len());
     for material in &mesh.greedy_materials {
         let image =
             image::load_from_memory_with_format(&material.texture_png, image::ImageFormat::Png)
-                .map_err(|e| format!("Unable to read a block texture: {e}"))?
+                .map_err(|e| format!("无法读取方块纹理：{e}"))?
                 .into_rgba8();
         let (width, height) = image.dimensions();
         textures.push(Texture {

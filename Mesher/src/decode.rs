@@ -89,7 +89,7 @@ pub fn decode(bytes: &[u8]) -> Result<UniversalSchematic, DecodeFailure> {
         return result;
     }
     Err(DecodeFailure::Format(
-        "This file is not a readable Minecraft schematic, or its data exceeds supported representation or nesting bounds.".into(),
+        "此文件不是可读取的 Minecraft 投影文件，或其数据超出了受支持的表示或嵌套上限。".into(),
     ))
 }
 
@@ -98,12 +98,31 @@ pub(crate) fn decode_preview(
     chunk_size: Option<i32>,
     thread_count: Option<u8>,
     speed_first: bool,
+    replacements: &[crate::replace::BlockReplacement],
     current: &impl Fn() -> Result<(), String>,
-) -> Result<CompactBlocks, String> {
+) -> Result<(CompactBlocks, i64), String> {
     let limits = preview_limits();
     limits
         .check_input(bytes)
         .map_err(|error| error.to_string())?;
+    // Replacements need the decoded model, so the packed litematic streaming
+    // path is skipped in favor of the bounded dense readers.
+    if !replacements.is_empty() {
+        let mut schematic = decode(bytes).map_err(|error| match error {
+            DecodeFailure::Format(message) | DecodeFailure::Limit(message) => message,
+        })?;
+        current()?;
+        let replaced = crate::replace::apply_replacements(&mut schematic, replacements)?;
+        current()?;
+        let source = CompactBlocks::from_schematic(
+            schematic,
+            chunk_size,
+            thread_count,
+            speed_first,
+            current,
+        )?;
+        return Ok((source, replaced));
+    }
     if let Some(source) = litematic::read_compact(
         bytes,
         &limits,
@@ -112,31 +131,25 @@ pub(crate) fn decode_preview(
         speed_first,
         current,
     )? {
-        return Ok(source);
+        return Ok((source, 0));
     }
     current()?;
     let result = read_other_bounded(bytes, &limits);
     current()?;
     if let Ok(schematic) = result {
-        return CompactBlocks::from_schematic(
-            schematic,
-            chunk_size,
-            thread_count,
-            speed_first,
-            current,
-        );
+        return Ok((
+            CompactBlocks::from_schematic(schematic, chunk_size, thread_count, speed_first, current)?,
+            0,
+        ));
     }
     if let Some(normalized) = normalize_structure_snbt(bytes) {
         let result = read_other_bounded(&normalized, &limits);
         current()?;
         if let Ok(schematic) = result {
-            return CompactBlocks::from_schematic(
-                schematic,
-                chunk_size,
-                thread_count,
-                speed_first,
-                current,
-            );
+            return Ok((
+                CompactBlocks::from_schematic(schematic, chunk_size, thread_count, speed_first, current)?,
+                0,
+            ));
         }
     }
     let result = structure_nbt::try_load(bytes, &limits);
@@ -145,15 +158,12 @@ pub(crate) fn decode_preview(
         let schematic = result.map_err(|error| match error {
             DecodeFailure::Format(message) | DecodeFailure::Limit(message) => message,
         })?;
-        return CompactBlocks::from_schematic(
-            schematic,
-            chunk_size,
-            thread_count,
-            speed_first,
-            current,
-        );
+        return Ok((
+            CompactBlocks::from_schematic(schematic, chunk_size, thread_count, speed_first, current)?,
+            0,
+        ));
     }
-    Err("This file is not a readable Minecraft schematic, or its data exceeds supported representation or nesting bounds.".into())
+    Err("此文件不是可读取的 Minecraft 投影文件，或其数据超出了受支持的表示或嵌套上限。".into())
 }
 
 fn read_bounded(bytes: &[u8], limits: &DecodeLimits) -> Result<UniversalSchematic, String> {
@@ -197,7 +207,7 @@ fn read_other_bounded(bytes: &[u8], limits: &DecodeLimits) -> Result<UniversalSc
             .read_bounded(bytes, limits)
             .map_err(|error| error.to_string());
     }
-    Err("Unknown or unsupported schematic format".into())
+    Err("未知或不受支持的投影格式".into())
 }
 
 /// Apply the source palette limit while allowing for the ordinary-air entry
@@ -226,7 +236,7 @@ mod tests {
         let mut samples = Vec::new();
         for iteration in 0..6 {
             let start = std::time::Instant::now();
-            let source = decode_preview(&bytes, Some(64), None, false, &|| Ok(())).unwrap();
+            let source = decode_preview(&bytes, Some(64), None, false, &[], &|| Ok(())).unwrap().0;
             let seconds = start.elapsed().as_secs_f64();
             println!("compact_decode iteration={iteration} seconds={seconds:.6} blocks={} block_entities={}", source.block_count(), source.block_entity_count());
             if iteration != 0 {

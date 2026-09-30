@@ -56,7 +56,7 @@
         "installerIcon": "../../Assets/app.ico",
         "installerHooks": "../../scripts/installer-hooks.nsh",
         "displayLanguageSelector": false,
-        "languages": ["English"]
+        "languages": ["SimpChinese"]
       }
     }
   }

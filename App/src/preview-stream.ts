@@ -1,3 +1,9 @@
+export type PreviewMaterial = {
+  name: string
+  properties: [string, string][]
+  count: number
+}
+
 export type PreviewMetadata = {
   blockCount: number
   blockEntityCount: number
@@ -19,6 +25,8 @@ export type PreviewMetadata = {
     alphaMode: 0 | 1 | 2
     buffers: [number, number, number, number, number]
   }[]
+  materials?: PreviewMaterial[]
+  replaced?: number
 }
 
 export type PreviewBatch = {
@@ -78,13 +86,13 @@ export function validateMetadata(
       bound.length !== 3 ||
       bound.some((v: unknown) => typeof v !== "number" || !Number.isFinite(v))
     ) {
-      throw new Error("The preview geometry bounds are invalid.")
+      throw new Error("预览几何边界无效。")
     }
   }
   const min = root.min as number[]
   const max = root.max as number[]
   for (let axis = 0; axis < 3; axis++) {
-    if (min[axis] > max[axis]) throw new Error("The preview geometry bounds are reversed.")
+    if (min[axis] > max[axis]) throw new Error("预览几何边界方向相反。")
   }
   if (
     !Array.isArray(root.textures) ||
@@ -92,7 +100,7 @@ export function validateMetadata(
     !Array.isArray(root.parts) ||
     root.parts.length === 0
   ) {
-    throw new Error("The preview must contain textures and renderable mesh parts.")
+    throw new Error("预览必须包含纹理和可渲染的网格部件。")
   }
   const bufferCount = integer(
     root.textures.length + root.parts.length * 5,
@@ -104,9 +112,9 @@ export function validateMetadata(
   let totalBytes = 0
   const consume = (id: unknown, bytes: number) => {
     const bufferId = integer(id, "buffer ID", bufferCount - 1)
-    if (bufferIds.has(bufferId)) throw new Error("The preview contains a duplicate buffer ID.")
+    if (bufferIds.has(bufferId)) throw new Error("预览包含重复的缓冲区 ID。")
     if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > byteLength - totalBytes) {
-      throw new Error("The preview contains truncated or oversized geometry.")
+      throw new Error("预览包含被截断或过大的几何体。")
     }
     bufferIds.add(bufferId)
     totalBytes += bytes
@@ -122,9 +130,9 @@ export function validateMetadata(
     }
     const bytes = integer(texture.byteLength, "texture byte length")
     if (bytes !== width * height * 4)
-      throw new Error("A block texture has an invalid RGBA byte length.")
+      throw new Error("某个方块纹理的 RGBA 字节长度无效。")
     if (typeof texture.repeat !== "boolean")
-      throw new Error("A block texture has an invalid repeat mode.")
+      throw new Error("某个方块纹理的重复模式无效。")
     consume(texture.bufferId, bytes)
   }
   let triangles = 0
@@ -134,9 +142,9 @@ export function validateMetadata(
     const indices = integer(part.indexCount, "index count", 0x7fffffff, 1)
     integer(part.textureIndex, "texture index", root.textures.length + textureOffset - 1)
     integer(part.alphaMode, "alpha mode", 2)
-    if (indices % 3 !== 0) throw new Error("A preview mesh contains an incomplete triangle.")
+    if (indices % 3 !== 0) throw new Error("某个预览网格包含不完整的三角形。")
     if (!Array.isArray(part.buffers) || part.buffers.length !== BUFFER_FORMATS.length)
-      throw new Error("A preview mesh has an invalid buffer list.")
+      throw new Error("某个预览网格的缓冲区列表无效。")
     for (let attribute = 0; attribute < BUFFER_FORMATS.length; attribute++) {
       const format = BUFFER_FORMATS[attribute]
       const count = attribute === 4 ? indices : vertices
@@ -145,8 +153,8 @@ export function validateMetadata(
     triangles = integer(triangles + indices / 3, "accumulated triangle count")
   }
   if (triangles !== root.triangleCount)
-    throw new Error("The preview triangle count does not match its mesh parts.")
-  if (totalBytes !== byteLength) throw new Error("The preview has an unexpected payload length.")
+    throw new Error("预览的三角形数量与网格部件不匹配。")
+  if (totalBytes !== byteLength) throw new Error("预览的数据长度不符合预期。")
 }
 
 // Retain descriptors only, never batch payloads or copies of earlier descriptor arrays.
@@ -203,7 +211,7 @@ export class PreviewStream {
       if (event.kind === "complete") {
         const metadata = event.metadata
         if (!metadata || batches.length === 0)
-          throw new Error("The preview stream completed without geometry.")
+          throw new Error("预览流结束时没有生成几何体。")
         validateMetadata(metadata, maxTextureSize)
         const first = batches[0]
         if (
@@ -216,7 +224,7 @@ export class PreviewStream {
           metadata.min.some((bound, axis) => bound !== minimum[axis]) ||
           metadata.max.some((bound, axis) => bound !== maximum[axis])
         )
-          throw new Error("The preview completion summary does not match its batches.")
+          throw new Error("预览完成汇总与批次不匹配。")
         let textureIndex = 0
         let partIndex = 0
         let bufferOffset = 0
@@ -230,7 +238,7 @@ export class PreviewStream {
               final.repeat !== source.repeat ||
               final.bufferId !== bufferOffset + source.bufferId
             )
-              throw new Error("The preview completion texture does not match its batch.")
+              throw new Error("预览完成的纹理与其批次不匹配。")
           }
           for (const source of batch.parts) {
             const final = metadata.parts[partIndex++]
@@ -241,20 +249,20 @@ export class PreviewStream {
               final.alphaMode !== source.alphaMode ||
               final.buffers.some((id, index) => id !== bufferOffset + source.buffers[index])
             )
-              throw new Error("The preview completion mesh does not match its batch.")
+              throw new Error("预览完成的网格与其批次不匹配。")
           }
           bufferOffset += batch.textures.length + batch.parts.length * BUFFER_FORMATS.length
         }
         check()
         return metadata
       }
-      if (event.kind !== "batch") throw new Error("Invalid preview stream event kind.")
+      if (event.kind !== "batch") throw new Error("预览流事件类型无效。")
       const batch = record(event.batch, "batch")
       const batchId = integer(batch.batchId, "batch ID", Number.MAX_SAFE_INTEGER, 1)
       if (batchId !== (previous ?? 0) + 1)
-        throw new Error("The preview batch order is inconsistent.")
+        throw new Error("预览批次顺序不一致。")
       if (integer(batch.textureOffset, "texture offset") !== textureCount)
-        throw new Error("The preview batch texture offset is inconsistent.")
+        throw new Error("预览批次的纹理偏移不一致。")
       const metadata = batch.metadata as PreviewMetadata
       validateMetadata(metadata, maxTextureSize, textureCount)
       if (
@@ -262,7 +270,7 @@ export class PreviewStream {
         (metadata.blockCount !== batches[0].blockCount ||
           metadata.blockEntityCount !== batches[0].blockEntityCount)
       )
-        throw new Error("The preview batch source counts are inconsistent.")
+        throw new Error("预览批次的来源数量不一致。")
       textureCount = integer(
         textureCount + metadata.textures.length,
         "accumulated texture count",

@@ -87,7 +87,7 @@ fn validate_nbt(bytes: &[u8], limits: &DecodeLimits) -> Result<(), &'static str>
         fn string(&mut self) -> Result<(), &'static str> {
             let count = u16::from_be_bytes(self.take(2)?.try_into().unwrap()) as usize;
             if count > self.limits.max_nbt_string_bytes {
-                return Err("NBT string limit exceeded");
+                return Err("超出 NBT 字符串长度上限");
             }
             self.take(count)?;
             Ok(())
@@ -96,15 +96,15 @@ fn validate_nbt(bytes: &[u8], limits: &DecodeLimits) -> Result<(), &'static str>
         fn count(&mut self) -> Result<usize, &'static str> {
             let count = i32::from_be_bytes(self.take(4)?.try_into().unwrap());
             if count < 0 || count as usize > self.limits.max_nbt_collection_items {
-                return Err("NBT collection limit exceeded");
+                return Err("超出 NBT 集合数量上限");
             }
             Ok(count as usize)
         }
 
         fn payload(&mut self, tag: u8, depth: usize) -> Result<(), &'static str> {
-            self.nodes = self.nodes.checked_add(1).ok_or("NBT node count overflow")?;
+            self.nodes = self.nodes.checked_add(1).ok_or("NBT 节点数量溢出")?;
             if depth > self.limits.max_nbt_depth || self.nodes > self.limits.max_nbt_nodes {
-                return Err("NBT depth or node limit exceeded");
+                return Err("超出 NBT 深度或节点上限");
             }
             match tag {
                 1 => {
@@ -126,7 +126,7 @@ fn validate_nbt(bytes: &[u8], limits: &DecodeLimits) -> Result<(), &'static str>
                         11 => 4,
                         _ => 8,
                     };
-                    self.take(count.checked_mul(width).ok_or("NBT array size overflow")?)?;
+                    self.take(count.checked_mul(width).ok_or("NBT 数组大小溢出")?)?;
                 }
                 8 => self.string()?,
                 9 => {
@@ -136,7 +136,7 @@ fn validate_nbt(bytes: &[u8], limits: &DecodeLimits) -> Result<(), &'static str>
                         return Err("invalid NBT list tag");
                     }
                     if count > self.limits.max_nbt_nodes.saturating_sub(self.nodes) {
-                        return Err("NBT node limit exceeded");
+                        return Err("超出 NBT 节点上限");
                     }
                     for _ in 0..count {
                         self.payload(child, depth + 1)?;
@@ -149,9 +149,9 @@ fn validate_nbt(bytes: &[u8], limits: &DecodeLimits) -> Result<(), &'static str>
                         if child == 0 {
                             break;
                         }
-                        count = count.checked_add(1).ok_or("NBT compound size overflow")?;
+                        count = count.checked_add(1).ok_or("NBT 复合标签大小溢出")?;
                         if count > self.limits.max_nbt_collection_items {
-                            return Err("NBT collection limit exceeded");
+                            return Err("超出 NBT 集合数量上限");
                         }
                         self.string()?;
                         self.payload(child, depth + 1)?;

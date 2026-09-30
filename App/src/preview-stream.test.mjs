@@ -273,14 +273,14 @@ const malformedBatches = [
     (value) => {
       value.batchId = 3
     },
-    /batch order/,
+    /批次顺序/,
   ],
   [
     "wrong texture offset",
     (value) => {
       value.textureOffset = 0
     },
-    /texture offset/,
+    /纹理偏移/,
   ],
   [
     "unpublished texture",
@@ -294,35 +294,35 @@ const malformedBatches = [
     (value) => {
       value.metadata.parts[0].buffers[1] = 0
     },
-    /duplicate buffer/,
+    /重复的缓冲区/,
   ],
   [
     "truncated payload",
     (value) => {
       value.metadata.byteLength--
     },
-    /truncated|payload length/,
+    /截断|数据长度/,
   ],
   [
     "incorrect triangle count",
     (value) => {
       value.metadata.triangleCount = 2
     },
-    /triangle count/,
+    /三角形数量/,
   ],
   [
     "changed source count",
     (value) => {
       value.metadata.blockEntityCount++
     },
-    /source counts/,
+    /来源数量/,
   ],
   [
     "reversed bounds",
     (value) => {
       value.metadata.min[0] = 9
     },
-    /bounds are reversed/,
+    /边界方向相反/,
   ],
   [
     "fractional vertex count",
@@ -343,7 +343,7 @@ const malformedBatches = [
     (value) => {
       value.metadata.parts[0].indexCount = 4
     },
-    /incomplete triangle/,
+    /不完整的三角形/,
   ],
 ]
 for (const [name, corrupt, expected] of malformedBatches) {
@@ -372,28 +372,28 @@ const malformedCompletions = [
     (metadata) => {
       metadata.max[0]++
     },
-    /summary/,
+    /汇总/,
   ],
   [
     "changed global counts",
     (metadata) => {
       metadata.blockCount++
     },
-    /summary/,
+    /汇总/,
   ],
   [
     "changed texture descriptor",
     (metadata) => {
       metadata.textures[0].repeat = true
     },
-    /completion texture/,
+    /完成的纹理/,
   ],
   [
     "changed mesh descriptor",
     (metadata) => {
       metadata.parts[1].alphaMode = 2
     },
-    /completion mesh/,
+    /完成的网格/,
   ],
   [
     "reordered global buffers",
@@ -403,7 +403,7 @@ const malformedCompletions = [
         metadata.parts[0].buffers[0],
       ]
     },
-    /completion mesh/,
+    /完成的网格/,
   ],
   [
     "missing batch",
@@ -412,7 +412,7 @@ const malformedCompletions = [
       metadata.byteLength -= 93
       metadata.triangleCount--
     },
-    /summary/,
+    /汇总/,
   ],
 ]
 for (const [name, corrupt, expected] of malformedCompletions) {

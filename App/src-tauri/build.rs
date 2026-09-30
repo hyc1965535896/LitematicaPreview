@@ -34,6 +34,9 @@ fn main() {
                 "register_associations",
                 "unregister_associations",
                 "show_licenses",
+                "export_schematic",
+                "block_catalog",
+                "block_icons",
             ])),
     )
     .expect("Unable to build Litematica Preview resources");

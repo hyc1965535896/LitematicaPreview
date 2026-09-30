@@ -115,7 +115,7 @@ fn extract_tile(atlas: &TextureAtlas, region: &AtlasRegion) -> Result<TextureDat
     let edge = |uv: f32, extent: u32| -> Result<u32, String> {
         let pixel = uv * extent as f32;
         if !pixel.is_finite() || pixel < 0.0 || pixel > extent as f32 || pixel.fract() != 0.0 {
-            return Err("Mesher returned a nonintegral atlas region".into());
+            return Err("网格生成器返回了非整数的图集区域".into());
         }
         Ok(pixel as u32)
     };
@@ -124,7 +124,7 @@ fn extract_tile(atlas: &TextureAtlas, region: &AtlasRegion) -> Result<TextureDat
     let right = edge(region.u_max, atlas.width)?;
     let bottom = edge(region.v_max, atlas.height)?;
     if right <= x || bottom <= y {
-        return Err("Mesher returned an empty atlas region".into());
+        return Err("网格生成器返回了空的图集区域".into());
     }
     let width = right - x;
     let height = bottom - y;
@@ -136,7 +136,7 @@ fn extract_tile(atlas: &TextureAtlas, region: &AtlasRegion) -> Result<TextureDat
         let source = atlas
             .pixels
             .get(start..start + row_bytes)
-            .ok_or("Mesher returned truncated atlas pixels")?;
+            .ok_or("网格生成器返回了被截断的图集像素")?;
         pixels.extend_from_slice(source);
     }
     Ok(TextureData::new(width, height, pixels))

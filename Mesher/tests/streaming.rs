@@ -141,6 +141,7 @@ fn preview(bytes: &[u8], pack: &ResourcePackSource) -> (PreviewInfo, Vec<Triangl
         bytes,
         pack,
         options(),
+            &[],
         |preview| {
             geometry.extend(triangles(&preview.mesh));
             Ok(())
@@ -150,7 +151,7 @@ fn preview(bytes: &[u8], pack: &ResourcePackSource) -> (PreviewInfo, Vec<Triangl
     )
     .unwrap();
     geometry.sort_unstable();
-    (info, geometry)
+    (info.info, geometry)
 }
 
 fn same_preview(actual: &(PreviewInfo, Vec<Triangle>), expected: &(PreviewInfo, Vec<Triangle>)) {
@@ -420,6 +421,7 @@ fn rejected(bytes: &[u8], pack: &ResourcePackSource) {
         bytes,
         pack,
         options(),
+            &[],
         |_| {
             consumed += 1;
             Ok(())
@@ -535,6 +537,7 @@ fn cancellation_interrupts_early_and_late_scans_without_delivering_partial_geome
             &bytes,
             &pack,
             options(),
+            &[],
             |_| {
                 before_consume.set(calls.get());
                 Ok(())
@@ -545,7 +548,8 @@ fn cancellation_interrupts_early_and_late_scans_without_delivering_partial_geome
                 Ok(())
             },
         )
-        .unwrap();
+        .unwrap()
+        .info;
         assert_eq!(info.block_count, 1);
         assert_eq!(info.triangle_count, 12);
         // Relative checkpoints cover early and late work without making the
@@ -558,6 +562,7 @@ fn cancellation_interrupts_early_and_late_scans_without_delivering_partial_geome
                 &bytes,
                 &pack,
                 options(),
+            &[],
                 |_| {
                     consumed.set(true);
                     Ok(())
@@ -594,6 +599,7 @@ fn threaded_preview(
             speed_first,
             ..PreviewOptions::default()
         },
+            &[],
         |preview| {
             chunks.push((preview.mesh.chunk_coord, triangles(&preview.mesh)));
             Ok(())
@@ -602,7 +608,7 @@ fn threaded_preview(
         || Ok(()),
     )
     .unwrap();
-    (info, chunks)
+    (info.info, chunks)
 }
 
 #[test]
@@ -686,6 +692,7 @@ fn parallel_preview_rejects_invalid_packed_states_and_gzip_crc_before_publish() 
                     speed_first,
                     ..PreviewOptions::default()
                 },
+            &[],
                 |_| panic!("malformed input must not publish geometry"),
                 |_, _| Ok(()),
                 || Ok(()),
@@ -718,6 +725,7 @@ fn parallel_cancel_after_first_chunk_never_publishes_stale_work() {
                 speed_first,
                 ..PreviewOptions::default()
             },
+            &[],
             |_| {
                 consumed.set(consumed.get() + 1);
                 Ok(())

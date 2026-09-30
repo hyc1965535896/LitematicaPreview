@@ -1,0 +1,901 @@
+[
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to load the welcome screen: {e}",
+  "new": "无法加载欢迎界面：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Open Minecraft schematic",
+  "new": "打开 Minecraft 投影文件"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "\"Minecraft schematics\"",
+  "new": "\"Minecraft 投影文件\""
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "\"All files\"",
+  "new": "\"所有文件\""
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to open the selected file: {e}",
+  "new": "无法打开所选文件：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to show the file picker: {e}",
+  "new": "无法显示文件选择器：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Choose a supported schematic: {}.",
+  "new": "请选择受支持的投影文件：{}。"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "The preview worker stopped unexpectedly: {e}",
+  "new": "预览工作进程意外停止：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "The preview worker stopped unexpectedly: {error}",
+  "new": "预览工作进程意外停止：{error}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Streaming preview requires multithreading.",
+  "new": "流式预览需要启用多线程。"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to receive the next preview batch: {e}",
+  "new": "无法接收下一个预览批次：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to read the preview buffer: {e}",
+  "new": "无法读取预览缓冲区：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to register file associations: {e}",
+  "new": "无法注册文件关联：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to remove file associations: {e}",
+  "new": "无法移除文件关联：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to open the license folder: {e}",
+  "new": "无法打开许可证文件夹：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Windows could not open the license folder (code {}).",
+  "new": "Windows 无法打开许可证文件夹（错误代码 {}）。"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Litematica Preview's desktop integration requires Windows.",
+  "new": "Litematica Preview 的桌面集成仅支持 Windows。"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Open one schematic per window.",
+  "new": "每个窗口只能打开一个投影文件。"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to resolve the schematic path: {e}",
+  "new": "无法解析投影文件路径：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unable to start Litematica Preview: {e}",
+  "new": "无法启动 Litematica Preview：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Invalid decoder process arguments.",
+  "new": "解码进程参数无效。"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Invalid extension selection.",
+  "new": "扩展名选择无效。"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Pass a comma-separated list of supported extensions.",
+  "new": "请传入以逗号分隔的受支持扩展名列表。"
+ },
+ {
+  "file": "App/src-tauri/src/main.rs",
+  "old": "Unexpected registration arguments.",
+  "new": "注册参数不符合预期。"
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "Unsupported schematic extension: {value}",
+  "new": "不受支持的投影文件扩展名：{value}"
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "Windows file associations: {error}",
+  "new": "Windows 文件关联：{error}"
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "The application path is not valid Unicode.",
+  "new": "应用程序路径不是有效的 Unicode。"
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "Another copy of Litematica Preview owns the file associations. Unregister that copy before registering this one.",
+  "new": "另一份 Litematica Preview 已拥有文件关联。请先注销那份副本，再注册这一份。"
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "Another application owns the Litematica Preview registration.",
+  "new": "另一个应用占用了 Litematica Preview 的注册项。"
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "\"Minecraft schematic\"",
+  "new": "\"Minecraft 投影文件\""
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "View Minecraft schematics and structures offline.",
+  "new": "离线查看 Minecraft 投影与结构。"
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "Could not open Windows Default Apps settings (error {result}).",
+  "new": "无法打开 Windows 默认应用设置（错误 {result}）。"
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "File associations are only supported on Windows.",
+  "new": "仅在 Windows 上支持文件关联。",
+  "count": 2
+ },
+ {
+  "file": "App/src-tauri/src/associations.rs",
+  "old": "Default Apps settings are only supported on Windows.",
+  "new": "仅在 Windows 上支持“默认应用”设置。"
+ },
+ {
+  "file": "App/src-tauri/src/resources.rs",
+  "old": "The bundled {bundled} resource is missing. Reinstall the complete app.",
+  "new": "随附的 {bundled} 资源缺失，请重新安装完整的应用。"
+ },
+ {
+  "file": "App/src-tauri/src/resources.rs",
+  "old": "Unable to read the bundled demos: {e}",
+  "new": "无法读取内置示例：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/resources.rs",
+  "old": "Unable to read a bundled demo: {e}",
+  "new": "无法读取某个内置示例：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/resources.rs",
+  "old": "Unable to inspect a bundled demo: {e}",
+  "new": "无法检查某个内置示例：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/resources.rs",
+  "old": "A bundled demo has an invalid filename.",
+  "new": "某个内置示例的文件名无效。"
+ },
+ {
+  "file": "App/src-tauri/src/resources.rs",
+  "old": "This file path cannot be represented as Unicode.",
+  "new": "此文件路径无法用 Unicode 表示。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The preview worker is unavailable. Restart the app.",
+  "new": "预览工作进程不可用，请重启应用。",
+  "count": 2
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The preview worker is unavailable.",
+  "new": "预览工作进程不可用。",
+  "count": 2
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The preview stream is unavailable.",
+  "new": "预览流不可用。",
+  "count": 8
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The preview stream has ended.",
+  "new": "预览流已结束。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "Invalid or duplicate preview batch acknowledgement.",
+  "new": "预览批次确认无效或重复。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The preview batch is not leased or has been released.",
+  "new": "预览批次未被租用或已释放。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The preview stream has already started.",
+  "new": "预览流已经启动。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The preview stream has been released.",
+  "new": "预览流已被释放。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The preview buffers are unavailable.",
+  "new": "预览缓冲区不可用。",
+  "count": 2
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The preview buffers have been released.",
+  "new": "预览缓冲区已被释放。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The bundled block resources are invalid: {e}",
+  "new": "随附的方块资源无效：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The bundled block resources are unavailable.",
+  "new": "随附的方块资源不可用。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The decoder encountered an internal error: {detail}",
+  "new": "解码器遇到内部错误：{detail}"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "Choose a schematic file, not a folder or device.",
+  "new": "请选择投影文件，而不是文件夹或设备。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "Choose a nonempty schematic.",
+  "new": "请选择非空的投影文件。",
+  "count": 2
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "The file exceeds this platform's addressable memory.",
+  "new": "文件超出了此平台可寻址的内存。"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "Unable to open {}: {e}",
+  "new": "无法打开 {}：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview.rs",
+  "old": "Unable to inspect {}: {e}",
+  "new": "无法检查 {}：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder input pipe is unavailable.",
+  "new": "解码器输入管道不可用。"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder input pipe is unavailable",
+  "new": "解码器输入管道不可用"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to create the decoder connection: {e}",
+  "new": "无法创建解码器连接：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to configure the decoder connection: {e}",
+  "new": "无法配置解码器连接：{e}",
+  "count": 2
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to locate the decoder connection: {e}",
+  "new": "无法找到解码器连接：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to locate the decoder executable: {e}",
+  "new": "无法找到解码器可执行文件：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to start the decoder process: {e}",
+  "new": "无法启动解码进程：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to inspect the decoder process: {e}",
+  "new": "无法检查解码进程：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder process stopped during startup ({status}).",
+  "new": "解码进程在启动期间停止（{status}）。"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder process did not connect within ten seconds.",
+  "new": "解码进程未能在十秒内连接。"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to configure decoder authentication: {e}",
+  "new": "无法配置解码器身份验证：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to connect to the decoder: {error}",
+  "new": "无法连接到解码器：{error}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to describe the decoder request: {e}",
+  "new": "无法序列化解码器请求：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The schematic or resource path is too long.",
+  "new": "投影文件或资源路径过长。"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder is not connected",
+  "new": "解码器未连接"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to isolate the decoder process: {}",
+  "new": "无法隔离解码进程：{}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to configure decoder isolation: {}",
+  "new": "无法配置解码器隔离：{}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder process stopped unexpectedly ({status}). The schematic could not be loaded.{}",
+  "new": "解码进程意外停止（{status}），无法加载投影文件。{}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder connection failed: {error}",
+  "new": "解码器连接失败：{error}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Invalid decoder connection port.",
+  "new": "解码器连接端口无效。"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to read decoder authentication: {e}",
+  "new": "无法读取解码器身份验证信息：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to read decoder memory settings: {e}",
+  "new": "无法读取解码器内存设置：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to monitor the preview host: {e}",
+  "new": "无法监视预览主机：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to connect to the preview host: {e}",
+  "new": "无法连接到预览主机：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to authenticate the decoder: {e}",
+  "new": "无法对解码器进行身份验证：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to read the decoder request: {e}",
+  "new": "无法读取解码器请求：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Invalid decoder request: {e}",
+  "new": "解码器请求无效：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to send the decoder response: {e}",
+  "new": "无法发送解码器响应：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder packet length is invalid",
+  "new": "解码器数据包长度无效"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "There is not enough memory to receive this preview",
+  "new": "内存不足，无法接收此预览"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder packet is too large",
+  "new": "解码器数据包过大"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to authenticate the decoder process (OS status {status}).",
+  "new": "无法验证解码进程（操作系统状态 {status}）。"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to authenticate the decoder process: {e}",
+  "new": "无法验证解码进程：{e}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "Unable to create the decoder job: {}",
+  "new": "无法创建解码器作业：{}"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": "The decoder memory limit exceeds this platform's addressable memory.",
+  "new": "解码器内存上限超出了此平台可寻址的内存。"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": " Decoder memory was limited to {mb} MB; the exit alone cannot confirm whether that limit was reached.",
+  "new": " 解码器内存被限制为 {mb} MB；仅凭退出无法确认是否达到了该上限。"
+ },
+ {
+  "file": "App/src-tauri/src/preview_process.rs",
+  "old": " The decoder memory limit is disabled.",
+  "new": " 解码器内存限制已停用。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The preview buffers require a little-endian target.",
+  "new": "预览缓冲区需要小端序目标平台。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The preview is too large to transfer to the graphics device.",
+  "new": "预览过大，无法传输到图形设备。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "Invalid preview range.",
+  "new": "预览范围无效。",
+  "count": 9
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "There is not enough memory to upload this preview.",
+  "new": "内存不足，无法上传此预览。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder packet is too large.",
+  "new": "解码器数据包过大。",
+  "count": 2
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "There is not enough memory to receive this preview.",
+  "new": "内存不足，无法接收此预览。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "Invalid decoder acknowledgement.",
+  "new": "解码器确认无效。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The mesher produced a non-finite attribute.",
+  "new": "网格生成器产生了非有限的数值属性。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder returned an oversized error.",
+  "new": "解码器返回了过大的错误信息。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "Invalid decoder error text.",
+  "new": "解码器错误文本无效。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder preview is truncated.",
+  "new": "解码器预览数据被截断。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder mesh progress is incomplete.",
+  "new": "解码器网格进度不完整。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder returned no chunks.",
+  "new": "解码器未返回任何区块。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder summary does not match its chunks.",
+  "new": "解码器汇总与区块不匹配。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder chunk source counts changed.",
+  "new": "解码器区块来源数量发生了变化。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder returned an invalid texture.",
+  "new": "解码器返回了无效的纹理。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder returned an invalid mesh part.",
+  "new": "解码器返回了无效的网格部件。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder buffer is oversized.",
+  "new": "解码器缓冲区过大。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder buffer is truncated or oversized.",
+  "new": "解码器缓冲区被截断或过大。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder returned an out-of-range mesh index.",
+  "new": "解码器返回了超出范围的网格索引。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "Unexpected preview buffer.",
+  "new": "意外的预览缓冲区。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder returned invalid mesh progress.",
+  "new": "解码器返回了无效的网格进度。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "Unexpected decoder record.",
+  "new": "意外的解码器记录。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder returned invalid preview metadata.",
+  "new": "解码器返回了无效的预览元数据。"
+ },
+ {
+  "file": "App/src-tauri/src/protocol.rs",
+  "old": "The decoder returned an empty buffer.",
+  "new": "解码器返回了空缓冲区。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The schematic contains no visible geometry.",
+  "new": "投影文件不包含可见的几何体。",
+  "count": 3
+ },
+ {
+  "file": "Mesher/src/decode.rs",
+  "old": "Unknown or unsupported schematic format",
+  "new": "未知或不受支持的投影格式"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "Choose a nonempty schematic.",
+  "new": "请选择非空的投影文件。"
+ },
+ {
+  "file": "Mesher/src/parallel.rs",
+  "old": "Unable to start preview worker: {error}",
+  "new": "无法启动预览工作线程：{error}"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The worker thread count must be from 2 to {max}.",
+  "new": "工作线程数必须在 2 到 {max} 之间。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The chunk size must be 16, 32, 64, 128 or 256 blocks.",
+  "new": "区块大小必须是 16、32、64、128 或 256 个方块。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The memory limit must be an integer from 2048 to 8192 MB.",
+  "new": "内存上限必须是 2048 到 8192 MB 之间的整数。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "Speed-first preview requires multithreading to be enabled.",
+  "new": "速度优先预览需要启用多线程。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "Parallel preview requires chunking to be enabled.",
+  "new": "并行预览需要启用分块。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "Unable to read a block texture: {e}",
+  "new": "无法读取方块纹理：{e}",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/meshing.rs",
+  "old": "Unable to prepare schematic textures: {error}",
+  "new": "无法准备投影纹理：{error}"
+ },
+ {
+  "file": "Mesher/src/parallel.rs",
+  "old": "A parallel preview worker panicked.",
+  "new": "一个并行预览工作线程发生了 panic。",
+  "count": 3
+ },
+ {
+  "file": "Mesher/src/parallel.rs",
+  "old": "A parallel preview worker stopped.",
+  "new": "一个并行预览工作线程已停止。",
+  "count": 2
+ },
+ {
+  "file": "Mesher/src/parallel.rs",
+  "old": "Parallel preview cancelled.",
+  "new": "并行预览已取消。"
+ },
+ {
+  "file": "Mesher/src/meshing.rs",
+  "old": "This schematic is too detailed to preview: {error}",
+  "new": "该投影文件过于复杂，无法预览：{error}",
+  "count": 2
+ },
+ {
+  "file": "Mesher/src/decode.rs",
+  "old": "This file is not a readable Minecraft schematic, or its data exceeds supported representation or nesting bounds.",
+  "new": "此文件不是可读取的 Minecraft 投影文件，或其数据超出了受支持的表示或嵌套上限。",
+  "count": 2
+ },
+ {
+  "file": "Mesher/src/meshing.rs",
+  "old": "The schematic has too many block states.",
+  "new": "投影文件的方块状态过多。",
+  "count": 2
+ },
+ {
+  "file": "Mesher/src/meshing.rs",
+  "old": "Block count exceeds i64.",
+  "new": "方块数量超出 i64 上限。",
+  "count": 3
+ },
+ {
+  "file": "Mesher/src/meshing.rs",
+  "old": "The schematic contains an invalid palette index.",
+  "new": "投影文件包含无效的调色板索引。",
+  "count": 2
+ },
+ {
+  "file": "Mesher/src/meshing/builder.rs",
+  "old": "Too many vertices in a mesh chunk.",
+  "new": "网格区块中的顶点过多。",
+  "count": 3
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The mesher produced invalid bounds.",
+  "new": "网格生成器产生了无效的边界。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The mesher produced invalid or oversized geometry.",
+  "new": "网格生成器产生了无效或过大的几何体。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The schematic must contain at least one block.",
+  "new": "投影文件必须至少包含一个方块。"
+ },
+ {
+  "file": "Mesher/src/meshing/builder.rs",
+  "old": "Culling bounds exceed i32 coordinates.",
+  "new": "剔除边界超出 i32 坐标范围。",
+  "count": 2
+ },
+ {
+  "file": "Mesher/src/meshing/builder.rs",
+  "old": "Culling dimensions exceed i32 representation.",
+  "new": "剔除尺寸超出 i32 表示范围。"
+ },
+ {
+  "file": "Mesher/src/meshing/builder.rs",
+  "old": "Culling grid exceeds addressable memory.",
+  "new": "剔除网格超出可寻址内存。"
+ },
+ {
+  "file": "Mesher/src/meshing.rs",
+  "old": "The mesh chunk size must be positive.",
+  "new": "网格区块大小必须为正。"
+ },
+ {
+  "file": "Mesher/src/meshing/builder.rs",
+  "old": "Greedy material {} has no texture.",
+  "new": "贪心合并材质 {} 没有对应纹理。"
+ },
+ {
+  "file": "Mesher/src/meshing/atlas.rs",
+  "old": "Mesher returned a nonintegral atlas region",
+  "new": "网格生成器返回了非整数的图集区域"
+ },
+ {
+  "file": "Mesher/src/meshing/atlas.rs",
+  "old": "Mesher returned an empty atlas region",
+  "new": "网格生成器返回了空的图集区域"
+ },
+ {
+  "file": "Mesher/src/meshing/atlas.rs",
+  "old": "Mesher returned truncated atlas pixels",
+  "new": "网格生成器返回了被截断的图集像素"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The schematic has too many triangles.",
+  "new": "投影文件的三角面过多。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The schematic has too many textures.",
+  "new": "投影文件的纹理过多。"
+ },
+ {
+  "file": "Mesher/src/meshing.rs",
+  "old": "The schematic has too many source block states.",
+  "new": "投影文件的源方块状态过多。"
+ },
+ {
+  "file": "Mesher/src/lib.rs",
+  "old": "The schematic has too many mesh parts.",
+  "new": "投影文件的网格部件过多。"
+ },
+ {
+  "file": "Mesher/src/meshing/builder.rs",
+  "old": "Animated texture {path} is absent from the shared atlas.",
+  "new": "动画纹理 {path} 不在共享图集中。"
+ },
+ {
+  "file": "Mesher/src/meshing/builder.rs",
+  "old": "A mesh chunk changed the shared texture atlas; texture discovery is incomplete.",
+  "new": "某个网格区块更改了共享纹理图集；纹理发现不完整。"
+ },
+ {
+  "file": "Mesher/src/structure_nbt.rs",
+  "old": "This structure has a block at {position:?}, outside its {size:?} size.",
+  "new": "此结构在 {position:?} 处有一个方块，超出了其 {size:?} 的尺寸。"
+ },
+ {
+  "file": "Mesher/src/structure_nbt.rs",
+  "old": "This file is not a Java structure block container.",
+  "new": "此文件不是 Java 结构方块容器。"
+ },
+ {
+  "file": "Mesher/src/bounded_nbt.rs",
+  "old": "NBT collection limit exceeded",
+  "new": "超出 NBT 集合数量上限",
+  "count": 2
+ },
+ {
+  "file": "Mesher/src/bounded_nbt.rs",
+  "old": "NBT depth or node limit exceeded",
+  "new": "超出 NBT 深度或节点上限",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/bounded_nbt.rs",
+  "old": "NBT node limit exceeded",
+  "new": "超出 NBT 节点上限",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/bounded_nbt.rs",
+  "old": "NBT string limit exceeded",
+  "new": "超出 NBT 字符串长度上限",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/bounded_nbt.rs",
+  "old": "NBT array size overflow",
+  "new": "NBT 数组大小溢出",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/bounded_nbt.rs",
+  "old": "NBT node count overflow",
+  "new": "NBT 节点数量溢出",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/bounded_nbt.rs",
+  "old": "NBT compound size overflow",
+  "new": "NBT 复合标签大小溢出",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/litematic_stream.rs",
+  "old": "NBT collection limit exceeded",
+  "new": "超出 NBT 集合数量上限",
+  "count": 2
+ },
+ {
+  "file": "Mesher/src/meshing.rs",
+  "old": "Block entity count exceeds i64.",
+  "new": "方块实体数量超出 i64 上限。",
+  "count": 2
+ },
+ {
+  "file": "Mesher/src/litematic_stream.rs",
+  "old": "NBT depth or node limit exceeded",
+  "new": "超出 NBT 深度或节点上限",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/litematic_stream.rs",
+  "old": "NBT node limit exceeded",
+  "new": "超出 NBT 节点上限",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/litematic_stream.rs",
+  "old": "NBT string limit exceeded",
+  "new": "超出 NBT 字符串长度上限",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/litematic_stream.rs",
+  "old": "NBT node count overflow",
+  "new": "NBT 节点数量溢出",
+  "count": 1
+ },
+ {
+  "file": "Mesher/src/litematic_stream.rs",
+  "old": "NBT compound size overflow",
+  "new": "NBT 复合标签大小溢出",
+  "count": 1
+ }
+]
