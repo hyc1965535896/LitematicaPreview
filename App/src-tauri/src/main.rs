@@ -277,6 +277,8 @@ struct ExportOutcome {
     destination: String,
     replaced: i64,
     block_count: i64,
+    #[serde(default)]
+    container_item_count: i64,
 }
 
 #[tauri::command]
@@ -330,6 +332,7 @@ async fn export_schematic(
         destination: resources::path_string(&outcome_destination).unwrap_or_default(),
         replaced: summary.replaced,
         block_count: summary.block_count,
+        container_item_count: 0,
     })
 }
 
@@ -380,6 +383,7 @@ async fn export_materials(
         destination: resources::path_string(&outcome_destination).unwrap_or_default(),
         replaced: summary.replaced,
         block_count: summary.block_count,
+        container_item_count: summary.container_item_count,
     })
 }
 

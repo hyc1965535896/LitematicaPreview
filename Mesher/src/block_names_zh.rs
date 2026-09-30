@@ -1,5 +1,7 @@
 //! Generated from the Minecraft 26.x zh_cn language file.
 //! Maps a full block id to its Simplified Chinese display name.
+//! Prefer [`crate::materials_xlsx::zh_name`] over reading this table directly:
+//! it falls back to the item-name table for ids this list does not cover.
 pub const BLOCK_NAMES_ZH_CN: &[(&str, &str)] = &[
     ("minecraft:acacia_button", "金合欢木按钮"),
     ("minecraft:acacia_door", "金合欢木门"),

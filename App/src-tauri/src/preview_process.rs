@@ -1,4 +1,4 @@
-use litematica_preview_native::{BlockReplacement, ExportFormat, PreviewOptions};
+use litematica_preview_native::{BlockReplacement, PreviewOptions};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};

@@ -61,7 +61,13 @@ import type { PreviewReadRange } from "./upload-layout"
 import { blockZhName, matchesBlockQuery, tooltipLabel, type BlockIconEntry } from "./block-picker"
 
 type BlockReplacement = { from: string; to: string }
-type ExportOutcome = { destination: string; replaced: number; blockCount: number }
+type ExportOutcome = {
+  destination: string
+  replaced: number
+  blockCount: number
+  /** Distinct item ids inside containers; 0 for non-material exports. */
+  containerItemCount: number
+}
 
 // Icons render once per app run in the Rust host; keep them across dialog opens.
 let cachedBlockIcons: BlockIconEntry[] | null = null
@@ -690,9 +696,13 @@ export default function App({ initialError }: { initialError?: string }) {
         replacements: rules,
       })
       const materialCount = loaded.metadata.materials?.length ?? 0
+      const containerNote =
+        outcome.containerItemCount > 0
+          ? `，容器内物品 ${numbers.format(outcome.containerItemCount)} 种`
+          : ""
       setNotice({
         intent: "success",
-        message: `已导出材料清单 ${fileName(outcome.destination)}（${materialCount} 种材料，${numbers.format(outcome.blockCount)} 个方块）。`,
+        message: `已导出材料清单 ${fileName(outcome.destination)}（${materialCount} 种材料${containerNote}，${numbers.format(outcome.blockCount)} 个方块）。`,
       })
     } catch (error) {
       if (errorMessage(error) !== "Cancelled")

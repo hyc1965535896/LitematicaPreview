@@ -13,13 +13,40 @@ use nucleation::UniversalSchematic;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
+use crate::containers::{self, ContainerMaterials};
 use crate::replace::{apply_replacements, BlockReplacement};
 
 const BOX_CAPACITY: f64 = 1728.0; // 27 stacks of 64 — Litematica's "盒数量"
 
+/// Cell style indexes into `xl/styles.xml`: bold text, thin borders, text and
+/// numbers inside a table, and the grey table header.
+const STYLE_BOLD: u8 = 1;
+const STYLE_TEXT: u8 = 3;
+const STYLE_NUMBER: u8 = 4;
+const STYLE_HEADER: u8 = 5;
+const STYLE_DECIMAL: u8 = 6;
+
+/// Column widths for the side-by-side tables: A-D the material list, E the
+/// gap, F-J the container contents. Kept narrow enough to print on one
+/// landscape page.
+const COLUMNS: &[(u32, f64)] = &[
+    (1, 20.0),
+    (2, 21.0),
+    (3, 9.0),
+    (4, 9.0),
+    (5, 3.0),
+    (6, 10.0),
+    (7, 18.0),
+    (8, 20.0),
+    (9, 9.0),
+    (10, 9.0),
+];
+
 pub struct MaterialsExport {
     pub data: Vec<u8>,
     pub material_count: usize,
+    /// Distinct item ids stored inside the schematic's containers.
+    pub container_item_count: usize,
     pub block_count: i64,
     pub replaced: i64,
 }
@@ -40,6 +67,7 @@ pub fn export_materials_xlsx(
         return Err("投影文件不包含可见的几何体。".into());
     }
     let materials = aggregate_materials(&schematic);
+    let containers = containers::collect(&schematic);
     let bounds = schematic.get_bounding_box();
     let size = (
         bounds.max.0 - bounds.min.0 + 1,
@@ -64,10 +92,12 @@ pub fn export_materials_xlsx(
         size,
         volume,
         &materials,
+        &containers,
     );
     Ok(MaterialsExport {
         data: workbook,
         material_count: materials.len(),
+        container_item_count: containers.distinct_items(),
         block_count,
         replaced,
     })
@@ -88,7 +118,7 @@ fn aggregate_materials(schematic: &UniversalSchematic) -> Vec<(String, i64)> {
     materials
 }
 
-fn is_air(name: &str) -> bool {
+pub(crate) fn is_air(name: &str) -> bool {
     matches!(
         name,
         "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
@@ -111,12 +141,15 @@ fn litematic_format_version(bytes: &[u8]) -> Option<i32> {
     root.get::<_, i32>("Version").ok()
 }
 
-fn block_zh_name(id: &str) -> Option<&'static str> {
+/// Chinese display name for a block or item id. Container contents are item
+/// ids, so the block table is consulted first and the item table second.
+pub(crate) fn zh_name(id: &str) -> Option<&'static str> {
     static NAMES: std::sync::OnceLock<HashMap<&'static str, &'static str>> =
         std::sync::OnceLock::new();
     let names = NAMES.get_or_init(|| {
         crate::block_names_zh::BLOCK_NAMES_ZH_CN
             .iter()
+            .chain(crate::item_names_zh::ITEM_NAMES_ZH_CN.iter())
             .copied()
             .collect()
     });
@@ -190,6 +223,7 @@ fn build_workbook(
     size: (i32, i32, i32),
     volume: i64,
     materials: &[(String, i64)],
+    containers: &ContainerMaterials,
 ) -> Vec<u8> {
     let mut sheet = SheetXml::new();
     // Metadata block, mirroring the template layout.
@@ -224,13 +258,15 @@ fn build_workbook(
     sheet.string_cell("A10", "投影材料种类", false);
     sheet.number_cell("B10", materials.len() as f64, "0");
     sheet.string_cell("A11", "容器内材料种类", false);
-    sheet.number_cell("B11", 0.0, "0");
+    sheet.number_cell("B11", containers.distinct_items() as f64, "0");
 
-    // Material table and the empty container section, as in the template.
+    // The material list and the container contents sit side by side — columns
+    // A-D and F-J, both starting at row 15 — so neither needs scrolling past
+    // the other.
     sheet.string_cell("A13", "投影材料列表", true);
     sheet.string_cell("F13", "投影容器列表", true);
     for (column, header) in [("A", "物品名称"), ("B", "物品ID"), ("C", "总数量"), ("D", "盒数量")] {
-        sheet.string_cell(&format!("{column}14"), header, true);
+        sheet.header_cell(&format!("{column}14"), header);
     }
     for (column, header) in [
         ("F", "容器名称"),
@@ -239,19 +275,48 @@ fn build_workbook(
         ("I", "总数量"),
         ("J", "盒数量"),
     ] {
-        sheet.string_cell(&format!("{column}14"), header, true);
+        sheet.header_cell(&format!("{column}14"), header);
     }
     for (index, (name, count)) in materials.iter().enumerate() {
         let row = index + 15;
         let id = name.strip_prefix("minecraft:").unwrap_or(name);
-        sheet.string_cell(&format!("A{row}"), block_zh_name(name).unwrap_or(id), false);
+        sheet.string_cell(&format!("A{row}"), zh_name(name).unwrap_or(id), false);
         sheet.string_cell(&format!("B{row}"), id, false);
         sheet.number_cell(&format!("C{row}"), *count as f64, "0");
-        let boxes = ((*count as f64 * 10.0) / BOX_CAPACITY).ceil() / 10.0;
-        sheet.number_cell(&format!("D{row}"), boxes.max(0.1), "0.0");
+        sheet.number_cell(&format!("D{row}"), box_count(*count), "0.0");
+    }
+    // Container contents: one row per item, grouped by the container it sits
+    // in. The container name is merged over its rows so each group reads as
+    // one block.
+    let mut row = 15;
+    for (container, items) in &containers.types {
+        let container_id = container.strip_prefix("minecraft:").unwrap_or(container);
+        let first = row;
+        for (item, count) in items {
+            let item_id = item.strip_prefix("minecraft:").unwrap_or(item);
+            let name = if row == first {
+                zh_name(container).unwrap_or(container_id).to_string()
+            } else {
+                String::new()
+            };
+            sheet.string_cell(&format!("F{row}"), &name, false);
+            sheet.string_cell(&format!("G{row}"), zh_name(item).unwrap_or(item_id), false);
+            sheet.string_cell(&format!("H{row}"), item_id, false);
+            sheet.number_cell(&format!("I{row}"), *count as f64, "0");
+            sheet.number_cell(&format!("J{row}"), box_count(*count), "0.0");
+            row += 1;
+        }
+        if row > first + 1 {
+            sheet.merge(&format!("F{first}:F{}", row - 1));
+        }
     }
 
     write_package(&sheet).expect("xlsx buffer write")
+}
+
+/// Boxes of 1728 (27 stacks of 64), rounded up to a tenth and never below 0.1.
+fn box_count(count: i64) -> f64 {
+    (((count as f64) * 10.0) / BOX_CAPACITY).ceil().max(1.0) / 10.0
 }
 
 /// Minimal OOXML package writer. Cells are grouped into `<row>` elements,
@@ -297,8 +362,8 @@ impl SheetXml {
         self.cells.push(body);
     }
 
-    fn cell(&mut self, reference: &str, content: &str, bold: bool, value_type: &str) {
-        let style = if bold { r#" s="1""# } else { "" };
+    fn cell(&mut self, reference: &str, content: &str, style: u8, value_type: &str) {
+        let style = format!(r#" s="{style}""#);
         let escaped = escape_xml(content);
         let body = if value_type == "inlineStr" {
             format!(
@@ -311,28 +376,50 @@ impl SheetXml {
     }
 
     fn string_cell(&mut self, reference: &str, content: &str, bold: bool) {
-        self.cell(reference, content, bold, "inlineStr");
+        let style = if bold { STYLE_BOLD } else { STYLE_TEXT };
+        self.cell(reference, content, style, "inlineStr");
+    }
+
+    /// A table header cell: bold on a light fill, centred.
+    fn header_cell(&mut self, reference: &str, content: &str) {
+        self.cell(reference, content, STYLE_HEADER, "inlineStr");
     }
 
     fn merged_string_cell(&mut self, reference: &str, range: &str, content: &str, bold: bool) {
-        self.cell(reference, content, bold, "inlineStr");
+        let style = if bold { STYLE_BOLD } else { STYLE_TEXT };
+        self.cell(reference, content, style, "inlineStr");
         self.merges.push(format!(r#"<mergeCell ref="{range}"/>"#));
     }
 
-    fn number_cell(&mut self, reference: &str, value: f64, format: &str) {
+    fn style_number_cell(&mut self, reference: &str, value: f64, format: &str, style: u8) {
         let rendered = if format == "0" {
             format!("{}", value as i64)
         } else {
             format!("{value:.1}")
         };
-        self.place(reference, format!(r#"<c r="{reference}"><v>{rendered}</v></c>"#));
+        self.place(reference, format!(r#"<c r="{reference}" s="{style}"><v>{rendered}</v></c>"#));
     }
 
-    fn to_xml(&self) -> String {
+    fn number_cell(&mut self, reference: &str, value: f64, format: &str) {
+        let style = if format == "0" { STYLE_NUMBER } else { STYLE_DECIMAL };
+        self.style_number_cell(reference, value, format, style);
+    }
+
+    fn merge(&mut self, range: &str) {
+        self.merges.push(format!(r#"<mergeCell ref="{range}"/>"#));
+    }
+
+    fn to_xml(&self, columns: &[(u32, f64)]) -> String {
         let mut body = String::from(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="14" customWidth="1"/><col min="2" max="4" width="7.5" customWidth="1"/><col min="5" max="5" width="10.6" customWidth="1"/><col min="6" max="6" width="14" customWidth="1"/><col min="7" max="7" width="9.5" customWidth="1"/><col min="8" max="8" width="11.8" customWidth="1"/><col min="9" max="10" width="7.5" customWidth="1"/></cols><sheetData>"#,
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>"#,
         );
+        for (index, width) in columns {
+            body.push_str(&format!(
+                r#"<col min="{index}" max="{index}" width="{width}" customWidth="1"/>"#
+            ));
+        }
+        body.push_str("</cols><sheetData>");
         body.push_str(&self.rows.join(""));
         if !self.cells.is_empty() {
             body.push_str(&format!(
@@ -399,9 +486,9 @@ fn write_package(sheet: &SheetXml) -> Result<Vec<u8>, String> {
         &mut zip,
         "xl/styles.xml",
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><name val="宋体"/><sz val="11"/></font><font><name val="宋体"/><sz val="11"/><b/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>"#,
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="0.0"/></numFmts><fonts count="2"><font><name val="宋体"/><sz val="11"/></font><font><name val="宋体"/><sz val="11"/><b/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFBFBFBF"/></left><right style="thin"><color rgb="FFBFBFBF"/></right><top style="thin"><color rgb="FFBFBFBF"/></top><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="7"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf></cellXfs></styleSheet>"#,
     )?;
-    write(&mut zip, "xl/worksheets/sheet1.xml", &sheet.to_xml())?;
+    write(&mut zip, "xl/worksheets/sheet1.xml", &sheet.to_xml(COLUMNS))?;
     zip.finish().map_err(|e| format!("无法完成工作簿：{e}"))?;
     Ok(cursor.into_inner())
 }

@@ -2,7 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::io::{self, Read, Write};
 
-use litematica_preview_native::{parts, LoadedPreview, Preview, PreviewInfo};
+use litematica_preview_native::{parts, LoadedPreview, Preview};
 use serde::{Deserialize, Serialize};
 
 pub const FRAME_BYTES: usize = 1024 * 1024;
@@ -109,6 +109,9 @@ pub struct Summary {
     pub materials: Vec<MaterialRecord>,
     #[serde(default)]
     pub replaced: i64,
+    /// Distinct items inside containers; only material-list exports fill it.
+    #[serde(default)]
+    pub container_item_count: i64,
 }
 
 /// Stores one logical renderer payload as allocation-sized segments without
@@ -420,6 +423,7 @@ impl<'a, S: Read + Write> Encoder<'a, S> {
                 max: preview.info.max,
                 materials: Vec::new(),
                 replaced: 0,
+                container_item_count: 0,
             },
         )
     }
@@ -466,6 +470,7 @@ pub fn finish(stream: &mut impl Write, result: Result<LoadedPreview, String>) ->
                     })
                     .collect(),
                 replaced: loaded.replaced,
+                container_item_count: loaded.container_item_count,
             };
             write_packet(
                 stream,
@@ -990,6 +995,7 @@ pub(crate) mod tests {
                 },
                 materials: Vec::new(),
                 replaced: 0,
+                container_item_count: 0,
             }),
         )
         .unwrap();
@@ -1494,6 +1500,7 @@ pub(crate) mod tests {
                 },
                 materials: Vec::new(),
                 replaced: 0,
+                container_item_count: 0,
             }),
         )
         .unwrap();

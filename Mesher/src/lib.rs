@@ -4,10 +4,12 @@ use nucleation::meshing::{MeshConfig, MeshLayer, MeshOutput, ResourcePackSource}
 use schematic_mesher::BoundingBox;
 
 mod block_names_zh;
+mod containers;
 mod decode;
 mod dv_map;
 mod export;
 mod icons;
+mod item_names_zh;
 mod materials_xlsx;
 mod meshing;
 mod parallel;
@@ -32,6 +34,9 @@ pub struct LoadedPreview {
     pub info: PreviewInfo,
     pub materials: Vec<MaterialEntry>,
     pub replaced: i64,
+    /// Distinct item ids inside containers; only the material-list export
+    /// fills this in, previews leave it at zero.
+    pub container_item_count: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -235,6 +240,7 @@ pub fn load_chunks(
         info,
         materials,
         replaced,
+        container_item_count: 0,
     })
 }
 
@@ -287,6 +293,7 @@ pub fn prepare(
         texture_count: textures.len() as u32 + 1,
         min: bounds.min,
         max: bounds.max,
+        ..PreviewInfo::default()
     };
     Ok(Preview {
         mesh,

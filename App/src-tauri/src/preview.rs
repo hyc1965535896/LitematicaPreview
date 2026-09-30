@@ -1067,6 +1067,7 @@ pub(crate) fn export_to_file(
 ) -> Result<LoadedPreview, String> {
     litematica_preview_native::validate_replacements(replacements)?;
     let data = read_file(path, &|| Ok(()))?;
+    let mut container_item_count = 0usize;
     let (exported_data, replaced, block_count) = if format == "materials" {
         let file_name = path
             .file_name()
@@ -1074,6 +1075,7 @@ pub(crate) fn export_to_file(
             .unwrap_or("schematic");
         let exported =
             litematica_preview_native::export_materials_xlsx(&data, file_name, replacements)?;
+        container_item_count = exported.container_item_count;
         (exported.data, exported.replaced, exported.block_count)
     } else {
         let export_format = ExportFormat::from_extension(format)
@@ -1096,6 +1098,7 @@ pub(crate) fn export_to_file(
         },
         materials: Vec::new(),
         replaced,
+        container_item_count: container_item_count as i64,
     })
 }
 
