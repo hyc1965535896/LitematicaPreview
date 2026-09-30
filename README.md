@@ -10,6 +10,12 @@
 
 <!-- README-I18N:END -->
 
+> [!TIP]
+> **This `cn` branch** (default here) extends upstream with a complete Simplified
+> Chinese UI, a material list with per-block replace rules, schematic export,
+> and a graphical block picker with software-rendered isometric icons. Build it
+> the same way as upstream (`scripts/build.ps1`). See the fork commit for details.
+
 Litematica Preview is a Windows desktop viewer for Minecraft schematics and structures, adapted from [LitematicaQL](https://github.com/Arcadi4/LitematicaQL). It previews `.litematic`, `.schem`, `.schematic`, `.nbt`, `.snbt`, `.mcstructure`, and `.nusn` files locally in 3D.
 
 ## Install

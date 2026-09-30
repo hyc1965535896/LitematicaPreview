@@ -10,6 +10,11 @@
 
 <!-- README-I18N:END -->
 
+> [!TIP]
+> **本 `cn` 分支**(本仓库默认分支)在上游基础上提供：完整简体中文界面、材料清单按方块替换、
+> 替换后导出新原理图，以及图形化选块器(软件渲染的等距方块图标，支持中文搜索)。
+> 构建方式与上游相同(`scripts/build.ps1`)。上传游时请保留 l10n/ 目录的翻译对照。
+
 Litematica Preview 是一款适用于 Windows 桌面的 Minecraft 投影与结构查看器，改编自 [LitematicaQL](https://github.com/Arcadi4/LitematicaQL)。它支持在本地以 3D 方式预览 `.litematic`、`.schem`、`.schematic`、`.nbt`、`.snbt`、`.mcstructure` 和 `.nusn` 文件。
 
 ## 安装
