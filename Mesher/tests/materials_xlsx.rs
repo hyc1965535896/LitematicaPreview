@@ -226,6 +226,33 @@ fn nested_shulker_box_counts_as_a_single_item() {
 }
 
 #[test]
+fn wall_variants_merge_into_the_item_that_places_them() {
+    let data = nucleation::formats::litematic::to_litematic(&schematic(&[
+        (0, 0, 0, "minecraft:oak_sign"),
+        (1, 0, 0, "minecraft:oak_wall_sign"),
+        (2, 0, 0, "minecraft:redstone_wall_torch"),
+        (3, 0, 0, "minecraft:wall_torch"),
+        (4, 0, 0, "minecraft:wither_skeleton_wall_skull"),
+    ]))
+    .unwrap();
+    let export = export_materials_xlsx(&data, "墙挂", &[]).expect("export workbook");
+    // Four distinct items: the two signs merged, each torch and the skull.
+    assert_eq!(export.material_count, 4);
+    let sheet = workbook_sheet(&export.data);
+    // Sorted by count desc, then id: the merged signs first.
+    assert_eq!(cell_value(&sheet, "A15"), "橡木告示牌");
+    assert_eq!(cell_value(&sheet, "B15"), "oak_sign");
+    assert_eq!(cell_value(&sheet, "C15"), "2");
+    assert_eq!(cell_value(&sheet, "A16"), "红石火把");
+    assert_eq!(cell_value(&sheet, "B16"), "redstone_torch");
+    assert_eq!(cell_value(&sheet, "A17"), "火把");
+    assert_eq!(cell_value(&sheet, "B17"), "torch");
+    assert_eq!(cell_value(&sheet, "A18"), "凋灵骷髅头颅");
+    assert_eq!(cell_value(&sheet, "B18"), "wither_skeleton_skull");
+    assert!(!sheet.contains("墙上"), "no wall-variant rows remain");
+}
+
+#[test]
 fn a_projection_without_containers_leaves_the_section_empty() {
     let data = nucleation::formats::litematic::to_litematic(&schematic(&[(
         0,
