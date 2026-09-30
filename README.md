@@ -17,7 +17,7 @@
 > the same way as upstream (`scripts/build.ps1`). The material-replace semantics are
 > modeled on [SchematicPreview](https://github.com/DimasKama/SchematicPreview) by DimasKama.
 
-Litematica Preview is a Windows desktop viewer for Minecraft schematics and structures, adapted from [LitematicaQL](https://github.com/Arcadi4/LitematicaQL). It previews `.litematic`, `.schem`, `.schematic`, `.nbt`, `.snbt`, `.mcstructure`, and `.nusn` files locally in 3D.
+Litematica Preview is a Windows desktop viewer for Minecraft schematics and structures, adapted from [LitematicaQL](https://github.com/Arcadi4/LitematicaQL). It previews .litematic, .schem, .schematic, .nbt, .snbt, .mcstructure, and .nusn files locally in 3D.
 
 ## Install
 
@@ -35,13 +35,13 @@ Requires Windows 10 or 11 (x64) and the [Microsoft Edge WebView2 Runtime](https:
 
 | Extension | File format |
 | --- | --- |
-| `.litematic` | Litematica |
-| `.schem` | Sponge schematic |
-| `.schematic` | MCEdit |
-| `.nbt` | Java structure block |
-| `.snbt` | Structure SNBT, brace or bracket block states |
-| `.mcstructure` | Bedrock structure |
-| `.nusn` | Nucleation snapshot |
+| .litematic | Litematica |
+| .schem | Sponge schematic |
+| .schematic | MCEdit |
+| .nbt | Java structure block |
+| .snbt | Structure SNBT, brace or bracket block states |
+| .mcstructure | Bedrock structure |
+| .nusn | Nucleation snapshot |
 
 ## Development
 

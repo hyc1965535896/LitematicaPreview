@@ -16,7 +16,7 @@
 > 构建方式与上游相同(`scripts/build.ps1`)。上传游时请保留 l10n/ 目录的翻译对照。
 > 替换材料的语义参考自 DimasKama 的 [SchematicPreview](https://github.com/DimasKama/SchematicPreview) 模组(仅借鉴行为,未复制代码)。
 
-Litematica Preview 是一款适用于 Windows 桌面的 Minecraft 投影与结构查看器，改编自 [LitematicaQL](https://github.com/Arcadi4/LitematicaQL)。它支持在本地以 3D 方式预览 `.litematic`、`.schem`、`.schematic`、`.nbt`、`.snbt`、`.mcstructure` 和 `.nusn` 文件。
+Litematica Preview 是一款适用于 Windows 桌面的 Minecraft 投影与结构查看器，改编自 [LitematicaQL](https://github.com/Arcadi4/LitematicaQL)。它支持在本地以 3D 方式预览 .litematic、.schem、.schematic、.nbt、.snbt、.mcstructure 和 .nusn 文件。
 
 ## 安装
 
@@ -34,13 +34,13 @@ Litematica Preview 是一款适用于 Windows 桌面的 Minecraft 投影与结�
 
 | 扩展名 | 文件格式 |
 | --- | --- |
-| `.litematic` | Litematica |
-| `.schem` | Sponge schematic（海绵投影） |
-| `.schematic` | MCEdit |
-| `.nbt` | Java 版结构方块（Structure block） |
-| `.snbt` | 结构 SNBT（支持花括号或方括号方块状态） |
-| `.mcstructure` | 基岩版结构（Bedrock structure） |
-| `.nusn` | Nucleation 快照（Nucleation snapshot） |
+| .litematic | Litematica |
+| .schem | Sponge schematic（海绵投影） |
+| .schematic | MCEdit |
+| .nbt | Java 版结构方块（Structure block） |
+| .snbt | 结构 SNBT（支持花括号或方括号方块状态） |
+| .mcstructure | 基岩版结构（Bedrock structure） |
+| .nusn | Nucleation 快照（Nucleation snapshot） |
 
 ## 开发
 
