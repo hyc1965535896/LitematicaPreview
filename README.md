@@ -21,7 +21,7 @@ Litematica Preview is a Windows desktop viewer for Minecraft schematics and stru
 
 ## Install
 
-Download the latest release from the [release page](https://github.com/Arcadi4/LitematicaPreview/releases):
+Download the latest release from the [release page](https://github.com/hyc1965535896/LitematicaPreview/releases):
 
 - **Installer (`LitematicaPreview-<version>-win-x64-setup.exe`)**: Installs per-user without administrator privileges and registers selected file associations.
 - **Portable (`LitematicaPreview-<version>-win-x64-portable.zip`)**: Extract the archive and run `LitematicaPreview.exe`. Keep `Assets`, `Demos`, and `Licenses` next to the executable.
@@ -67,8 +67,9 @@ cargo test --manifest-path App/src-tauri/Cargo.toml --release --locked
 - Visual Studio C++ Build Tools (Desktop development with C++, x64 MSVC, Windows SDK)
 
 ```powershell
-git clone https://github.com/Arcadi4/LitematicaPreview.git
+git clone https://github.com/hyc1965535896/LitematicaPreview.git
 cd LitematicaPreview
+git checkout cn
 
 rustup target add x86_64-pc-windows-msvc
 ./scripts/build.ps1

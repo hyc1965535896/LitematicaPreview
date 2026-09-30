@@ -20,7 +20,7 @@ Litematica Preview 是一款适用于 Windows 桌面的 Minecraft 投影与结�
 
 ## 安装
 
-从 [发布页面](https://github.com/Arcadi4/LitematicaPreview/releases) 下载最新版本：
+从 [发布页面](https://github.com/hyc1965535896/LitematicaPreview/releases) 下载最新版本：
 
 - **安装包 (`LitematicaPreview-<version>-win-x64-setup.exe`)**：按当前用户安装，无需管理员权限，并可注册所选的文件关联。
 - **便携版 (`LitematicaPreview-<version>-win-x64-portable.zip`)**：解压压缩包并运行 `LitematicaPreview.exe`。请将 `Assets`、`Demos` 和 `Licenses` 目录保留在可执行文件同级目录下。
@@ -66,8 +66,9 @@ cargo test --manifest-path App/src-tauri/Cargo.toml --release --locked
 - Visual Studio C++ Build Tools（使用 C++ 的桌面开发、x64 MSVC、Windows SDK）
 
 ```powershell
-git clone https://github.com/Arcadi4/LitematicaPreview.git
+git clone https://github.com/hyc1965535896/LitematicaPreview.git
 cd LitematicaPreview
+git checkout cn
 
 rustup target add x86_64-pc-windows-msvc
 ./scripts/build.ps1
