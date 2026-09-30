@@ -20,6 +20,9 @@ schematic-mesher = "=0.2.0"
 base64 = "0.21.7"
 zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
 quartz_nbt = { version = "0.2.9", features = ["preserve_order"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Time"] }
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 regex = "1"
 serde = { version = "1.0.229", features = ["derive"] }

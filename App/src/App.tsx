@@ -680,6 +680,28 @@ export default function App({ initialError }: { initialError?: string }) {
     }
   }, [exportFormat, exporting, loaded])
 
+  const runMaterialsExport = useCallback(async () => {
+    if (!loaded || exporting) return
+    setExporting(true)
+    try {
+      const rules = replacementsRef.current.path === loaded.path ? replacementsRef.current.rules : []
+      const outcome = await invoke<ExportOutcome>("export_materials", {
+        path: loaded.path,
+        replacements: rules,
+      })
+      const materialCount = loaded.metadata.materials?.length ?? 0
+      setNotice({
+        intent: "success",
+        message: `已导出材料清单 ${fileName(outcome.destination)}（${materialCount} 种材料，${numbers.format(outcome.blockCount)} 个方块）。`,
+      })
+    } catch (error) {
+      if (errorMessage(error) !== "Cancelled")
+        setNotice({ intent: "error", message: `导出材料失败：${errorMessage(error)}` })
+    } finally {
+      setExporting(false)
+    }
+  }, [exporting, loaded])
+
   useEffect(() => {
     mounted.current = true
     // Keep restoration opted in even if a lost context makes the renderer
@@ -1488,6 +1510,14 @@ export default function App({ initialError }: { initialError?: string }) {
                         </option>
                       ))}
                     </select>
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      disabled={exporting || loading !== null}
+                      onClick={() => void runMaterialsExport()}
+                    >
+                      导出材料…
+                    </Button>
                     <Button
                       appearance="primary"
                       size="small"

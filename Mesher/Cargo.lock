@@ -602,6 +602,7 @@ dependencies = [
  "schematic-mesher",
  "serde",
  "serde_json",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

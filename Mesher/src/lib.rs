@@ -3,15 +3,19 @@
 use nucleation::meshing::{MeshConfig, MeshLayer, MeshOutput, ResourcePackSource};
 use schematic_mesher::BoundingBox;
 
+mod block_names_zh;
 mod decode;
+mod dv_map;
 mod export;
 mod icons;
+mod materials_xlsx;
 mod meshing;
 mod parallel;
 mod replace;
 pub use decode::{decode, DecodeFailure};
 pub use export::{export_schematic, ExportFormat};
 pub use icons::{block_icons, BlockIcon};
+pub use materials_xlsx::{export_materials_xlsx, MaterialsExport};
 pub use replace::{apply_replacements, validate_replacements, BlockReplacement, MAX_REPLACEMENTS};
 
 /// One distinct block state in the loaded schematic with its voxel count.

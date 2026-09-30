@@ -23,6 +23,7 @@
     "allow-show-licenses",
     "allow-export-schematic",
     "allow-block-catalog",
-    "allow-block-icons"
+    "allow-block-icons",
+    "allow-export-materials"
   ]
 }

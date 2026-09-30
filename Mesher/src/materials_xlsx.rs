@@ -1,0 +1,407 @@
+//! Material list export to the same `.xlsx` layout as Litematica's
+//! schematic-material template: a metadata block followed by the material
+//! table (Chinese name, bare item id, total count, shulker-box count).
+//!
+//! The workbook is written as a minimal OOXML package (inline strings, one
+//! stylesheet entry for bold headers) so it opens in Excel and WPS without
+//! extra dependencies.
+
+use std::collections::HashMap;
+use std::io::{Cursor, Read, Write};
+
+use nucleation::UniversalSchematic;
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
+
+use crate::replace::{apply_replacements, BlockReplacement};
+
+const BOX_CAPACITY: f64 = 1728.0; // 27 stacks of 64 — Litematica's "盒数量"
+
+pub struct MaterialsExport {
+    pub data: Vec<u8>,
+    pub material_count: usize,
+    pub block_count: i64,
+    pub replaced: i64,
+}
+
+pub fn export_materials_xlsx(
+    bytes: &[u8],
+    file_name: &str,
+    replacements: &[BlockReplacement],
+) -> Result<MaterialsExport, String> {
+    let mut schematic = crate::decode::decode(bytes).map_err(|error| match error {
+        crate::decode::DecodeFailure::Format(message) | crate::decode::DecodeFailure::Limit(message) => {
+            message
+        }
+    })?;
+    let replaced = apply_replacements(&mut schematic, replacements)?;
+    let block_count = i64::from(schematic.total_blocks());
+    if block_count == 0 {
+        return Err("投影文件不包含可见的几何体。".into());
+    }
+    let materials = aggregate_materials(&schematic);
+    let bounds = schematic.get_bounding_box();
+    let size = (
+        bounds.max.0 - bounds.min.0 + 1,
+        bounds.max.1 - bounds.min.1 + 1,
+        bounds.max.2 - bounds.min.2 + 1,
+    );
+    let volume = i64::from(size.0) * i64::from(size.1) * i64::from(size.2);
+
+    let metadata = &schematic.metadata;
+    let data_version = metadata
+        .source_data_version
+        .or(metadata.mc_version)
+        .unwrap_or_default();
+    let lm_version = litematic_format_version(bytes);
+    let workbook = build_workbook(
+        file_name,
+        metadata.author.as_deref().unwrap_or(""),
+        metadata.created,
+        lm_version,
+        data_version,
+        block_count,
+        size,
+        volume,
+        &materials,
+    );
+    Ok(MaterialsExport {
+        data: workbook,
+        material_count: materials.len(),
+        block_count,
+        replaced,
+    })
+}
+
+/// Merges per-state counts into per-block totals, dropping air, sorted by
+/// count descending (then by id for stability) like the template.
+fn aggregate_materials(schematic: &UniversalSchematic) -> Vec<(String, i64)> {
+    let mut totals: HashMap<String, i64> = HashMap::new();
+    for (state, count) in schematic.count_block_types() {
+        if is_air(&state.name) {
+            continue;
+        }
+        *totals.entry(state.name.to_string()).or_default() += count as i64;
+    }
+    let mut materials: Vec<(String, i64)> = totals.into_iter().collect();
+    materials.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    materials
+}
+
+fn is_air(name: &str) -> bool {
+    matches!(
+        name,
+        "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+    )
+}
+
+/// The Litematica schematic format version (`Version` in the root compound).
+/// Nucleation's decoder does not surface it, so the compressed document is
+/// re-read here; anything that is not a Litematica file yields `None`.
+fn litematic_format_version(bytes: &[u8]) -> Option<i32> {
+    let mut decompressed = Vec::new();
+    flate2::read::GzDecoder::new(std::io::Cursor::new(bytes))
+        .read_to_end(&mut decompressed)
+        .ok()?;
+    let (root, _) = quartz_nbt::io::read_nbt(
+        &mut std::io::Cursor::new(&decompressed),
+        quartz_nbt::io::Flavor::Uncompressed,
+    )
+    .ok()?;
+    root.get::<_, i32>("Version").ok()
+}
+
+fn block_zh_name(id: &str) -> Option<&'static str> {
+    static NAMES: std::sync::OnceLock<HashMap<&'static str, &'static str>> =
+        std::sync::OnceLock::new();
+    let names = NAMES.get_or_init(|| {
+        crate::block_names_zh::BLOCK_NAMES_ZH_CN
+            .iter()
+            .copied()
+            .collect()
+    });
+    names.get(id).copied()
+}
+
+fn game_version(data_version: i32) -> Option<&'static str> {
+    crate::dv_map::DATA_VERSIONS
+        .iter()
+        .find(|(version, _)| *version == data_version)
+        .map(|(_, name)| *name)
+}
+
+/// Unix epoch milliseconds to local `YYYY-MM-DD HH:MM:SS`.
+fn format_created(millis: u64) -> String {
+    let offset = local_offset_seconds();
+    let seconds = (millis / 1000) as i64 + i64::from(offset);
+    let days = seconds.div_euclid(86_400);
+    let rem = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02}",
+        rem / 3600,
+        (rem / 60) % 60,
+        rem % 60
+    )
+}
+
+/// Howard Hinnant's civil-from-days algorithm, days since 1970-01-01.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+#[cfg(windows)]
+fn local_offset_seconds() -> i32 {
+    use std::mem::MaybeUninit;
+    // Bias counts minutes to add to local time to get UTC; negate to add UTC
+    // to local. GetTimeZoneInformation includes the active DST adjustment.
+    unsafe {
+        let mut info = MaybeUninit::<windows_sys::Win32::System::Time::TIME_ZONE_INFORMATION>::uninit();
+        let result = windows_sys::Win32::System::Time::GetTimeZoneInformation(info.as_mut_ptr());
+        if result == windows_sys::Win32::System::Time::TIME_ZONE_ID_INVALID {
+            return 0;
+        }
+        -i32::from(info.assume_init().Bias) * 60
+    }
+}
+
+#[cfg(not(windows))]
+fn local_offset_seconds() -> i32 {
+    0
+}
+
+fn build_workbook(
+    file_name: &str,
+    author: &str,
+    created: Option<u64>,
+    lm_version: Option<i32>,
+    data_version: i32,
+    block_count: i64,
+    size: (i32, i32, i32),
+    volume: i64,
+    materials: &[(String, i64)],
+) -> Vec<u8> {
+    let mut sheet = SheetXml::new();
+    // Metadata block, mirroring the template layout.
+    sheet.string_cell("A1", "投影文件名", true);
+    sheet.merged_string_cell("B1", "B1:J1", file_name, true);
+    sheet.string_cell("A2", "保存者游戏 ID", false);
+    sheet.string_cell("B2", author, false);
+    sheet.string_cell("A3", "创建时间", false);
+    sheet.string_cell("B3", &created.map(format_created).unwrap_or_default(), false);
+    sheet.string_cell("A4", "方块数", false);
+    sheet.number_cell("B4", block_count as f64, "0");
+    sheet.string_cell("A5", "体积", false);
+    sheet.number_cell("B5", volume as f64, "0");
+    sheet.string_cell("A6", "尺寸", false);
+    sheet.string_cell("B6", &format!("{} × {} × {}", size.0, size.1, size.2), false);
+    sheet.string_cell("A7", "Litematic 版本", false);
+    match lm_version {
+        Some(version) => sheet.number_cell("B7", f64::from(version), "0"),
+        None => sheet.string_cell("B7", "", false),
+    }
+    sheet.string_cell("A8", "游戏版本", false);
+    match game_version(data_version).and_then(|name| name.parse::<f64>().ok()) {
+        Some(version) => sheet.number_cell("B8", version, "0.0"),
+        None => sheet.string_cell("B8", game_version(data_version).unwrap_or(""), false),
+    }
+    sheet.string_cell("A9", "数据版本", false);
+    if data_version > 0 {
+        sheet.number_cell("B9", f64::from(data_version), "0");
+    } else {
+        sheet.string_cell("B9", "", false);
+    }
+    sheet.string_cell("A10", "投影材料种类", false);
+    sheet.number_cell("B10", materials.len() as f64, "0");
+    sheet.string_cell("A11", "容器内材料种类", false);
+    sheet.number_cell("B11", 0.0, "0");
+
+    // Material table and the empty container section, as in the template.
+    sheet.string_cell("A13", "投影材料列表", true);
+    sheet.string_cell("F13", "投影容器列表", true);
+    for (column, header) in [("A", "物品名称"), ("B", "物品ID"), ("C", "总数量"), ("D", "盒数量")] {
+        sheet.string_cell(&format!("{column}14"), header, true);
+    }
+    for (column, header) in [
+        ("F", "容器名称"),
+        ("G", "容器物品"),
+        ("H", "容器物品ID"),
+        ("I", "总数量"),
+        ("J", "盒数量"),
+    ] {
+        sheet.string_cell(&format!("{column}14"), header, true);
+    }
+    for (index, (name, count)) in materials.iter().enumerate() {
+        let row = index + 15;
+        let id = name.strip_prefix("minecraft:").unwrap_or(name);
+        sheet.string_cell(&format!("A{row}"), block_zh_name(name).unwrap_or(id), false);
+        sheet.string_cell(&format!("B{row}"), id, false);
+        sheet.number_cell(&format!("C{row}"), *count as f64, "0");
+        let boxes = ((*count as f64 * 10.0) / BOX_CAPACITY).ceil() / 10.0;
+        sheet.number_cell(&format!("D{row}"), boxes.max(0.1), "0.0");
+    }
+
+    write_package(&sheet).expect("xlsx buffer write")
+}
+
+/// Minimal OOXML package writer. Cells are grouped into `<row>` elements,
+/// which Excel and openpyxl require even though the references are explicit.
+struct SheetXml {
+    rows: Vec<String>,
+    current: u32,
+    cells: Vec<String>,
+    merges: Vec<String>,
+}
+
+impl SheetXml {
+    fn new() -> Self {
+        SheetXml {
+            rows: Vec::new(),
+            current: 0,
+            cells: Vec::new(),
+            merges: Vec::new(),
+        }
+    }
+
+    fn flush(&mut self) {
+        if self.cells.is_empty() {
+            return;
+        }
+        self.rows.push(format!(
+            r#"<row r="{}">{}</row>"#,
+            self.current,
+            self.cells.join("")
+        ));
+        self.cells.clear();
+    }
+
+    fn place(&mut self, reference: &str, body: String) {
+        let row = reference
+            .trim_start_matches(|c: char| c.is_ascii_uppercase())
+            .parse::<u32>()
+            .expect("cell row number");
+        if row != self.current {
+            self.flush();
+            self.current = row;
+        }
+        self.cells.push(body);
+    }
+
+    fn cell(&mut self, reference: &str, content: &str, bold: bool, value_type: &str) {
+        let style = if bold { r#" s="1""# } else { "" };
+        let escaped = escape_xml(content);
+        let body = if value_type == "inlineStr" {
+            format!(
+                r#"<c r="{reference}"{style} t="inlineStr"><is><t>{escaped}</t></is></c>"#
+            )
+        } else {
+            format!(r#"<c r="{reference}"{style} t="{value_type}">{escaped}</c>"#)
+        };
+        self.place(reference, body);
+    }
+
+    fn string_cell(&mut self, reference: &str, content: &str, bold: bool) {
+        self.cell(reference, content, bold, "inlineStr");
+    }
+
+    fn merged_string_cell(&mut self, reference: &str, range: &str, content: &str, bold: bool) {
+        self.cell(reference, content, bold, "inlineStr");
+        self.merges.push(format!(r#"<mergeCell ref="{range}"/>"#));
+    }
+
+    fn number_cell(&mut self, reference: &str, value: f64, format: &str) {
+        let rendered = if format == "0" {
+            format!("{}", value as i64)
+        } else {
+            format!("{value:.1}")
+        };
+        self.place(reference, format!(r#"<c r="{reference}"><v>{rendered}</v></c>"#));
+    }
+
+    fn to_xml(&self) -> String {
+        let mut body = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="14" customWidth="1"/><col min="2" max="4" width="7.5" customWidth="1"/><col min="5" max="5" width="10.6" customWidth="1"/><col min="6" max="6" width="14" customWidth="1"/><col min="7" max="7" width="9.5" customWidth="1"/><col min="8" max="8" width="11.8" customWidth="1"/><col min="9" max="10" width="7.5" customWidth="1"/></cols><sheetData>"#,
+        );
+        body.push_str(&self.rows.join(""));
+        if !self.cells.is_empty() {
+            body.push_str(&format!(
+                r#"<row r="{}">{}</row>"#,
+                self.current,
+                self.cells.join("")
+            ));
+        }
+        body.push_str("</sheetData>");
+        if !self.merges.is_empty() {
+            body.push_str(&format!(
+                r#"<mergeCells count="{}">{}</mergeCells>"#,
+                self.merges.len(),
+                self.merges.join("")
+            ));
+        }
+        body.push_str("</worksheet>");
+        body
+    }
+}
+
+fn escape_xml(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn write_package(sheet: &SheetXml) -> Result<Vec<u8>, String> {
+    let mut cursor = Cursor::new(Vec::new());
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let mut zip = ZipWriter::new(&mut cursor);
+    let write = |zip: &mut ZipWriter<&mut Cursor<Vec<u8>>>, name: &str, content: &str| -> Result<(), String> {
+        zip.start_file(name, options)
+            .map_err(|e| format!("无法写入工作簿条目：{e}"))?;
+        zip.write_all(content.as_bytes())
+            .map_err(|e| format!("无法写入工作簿条目：{e}"))
+    };
+
+    write(
+        &mut zip,
+        "[Content_Types].xml",
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>"#,
+    )?;
+    write(
+        &mut zip,
+        "_rels/.rels",
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+    )?;
+    write(
+        &mut zip,
+        "xl/workbook.xml",
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="材料清单" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+    )?;
+    write(
+        &mut zip,
+        "xl/_rels/workbook.xml.rels",
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#,
+    )?;
+    write(
+        &mut zip,
+        "xl/styles.xml",
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><name val="宋体"/><sz val="11"/></font><font><name val="宋体"/><sz val="11"/><b/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>"#,
+    )?;
+    write(&mut zip, "xl/worksheets/sheet1.xml", &sheet.to_xml())?;
+    zip.finish().map_err(|e| format!("无法完成工作簿：{e}"))?;
+    Ok(cursor.into_inner())
+}

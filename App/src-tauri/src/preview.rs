@@ -1066,24 +1066,36 @@ pub(crate) fn export_to_file(
     destination: &Path,
 ) -> Result<LoadedPreview, String> {
     litematica_preview_native::validate_replacements(replacements)?;
-    let format = ExportFormat::from_extension(format)
-        .ok_or_else(|| format!("不受支持的导出格式：{format}"))?;
     let data = read_file(path, &|| Ok(()))?;
-    let exported = litematica_preview_native::export_schematic(&data, replacements, format)?;
+    let (exported_data, replaced, block_count) = if format == "materials" {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("schematic");
+        let exported =
+            litematica_preview_native::export_materials_xlsx(&data, file_name, replacements)?;
+        (exported.data, exported.replaced, exported.block_count)
+    } else {
+        let export_format = ExportFormat::from_extension(format)
+            .ok_or_else(|| format!("不受支持的导出格式：{format}"))?;
+        let exported =
+            litematica_preview_native::export_schematic(&data, replacements, export_format)?;
+        (exported.data, exported.replaced, exported.block_count)
+    };
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("无法创建导出目录：{e}"))?;
     }
     let mut temp = destination.to_path_buf();
     temp.set_extension("part");
-    std::fs::write(&temp, &exported.data).map_err(|e| format!("无法写入导出文件：{e}"))?;
+    std::fs::write(&temp, &exported_data).map_err(|e| format!("无法写入导出文件：{e}"))?;
     std::fs::rename(&temp, destination).map_err(|e| format!("无法完成导出文件：{e}"))?;
     Ok(LoadedPreview {
         info: litematica_preview_native::PreviewInfo {
-            block_count: exported.block_count,
+            block_count,
             ..litematica_preview_native::PreviewInfo::default()
         },
         materials: Vec::new(),
-        replaced: exported.replaced,
+        replaced,
     })
 }
 

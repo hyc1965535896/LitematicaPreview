@@ -37,6 +37,7 @@ fn main() {
                 "export_schematic",
                 "block_catalog",
                 "block_icons",
+                "export_materials",
             ])),
     )
     .expect("Unable to build Litematica Preview resources");

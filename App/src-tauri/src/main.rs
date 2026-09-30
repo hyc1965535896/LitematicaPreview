@@ -334,6 +334,56 @@ async fn export_schematic(
 }
 
 #[tauri::command]
+async fn export_materials(
+    app: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    replacements: Vec<litematica_preview_native::BlockReplacement>,
+    state: State<'_, HostState>,
+) -> Result<ExportOutcome, String> {
+    litematica_preview_native::validate_replacements(&replacements)?;
+    let path = preview_path(path)?;
+    let default_name = format!(
+        "{}-materials.xlsx",
+        path.file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("schematic")
+    );
+    let destination = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_parent(&window)
+            .set_title("导出材料清单")
+            .set_file_name(&default_name)
+            .add_filter("Excel 工作簿", &["xlsx"])
+            .blocking_save_file()
+            .map(|file| {
+                file.into_path()
+                    .map_err(|e| format!("无法打开所选文件：{e}"))
+            })
+            .transpose()
+    })
+    .await
+    .map_err(|e| format!("无法显示保存对话框：{e}"))?
+    .map_err(|e| format!("无法打开所选文件：{e}"))?;
+    let Some(destination) = destination else {
+        return Err("Cancelled".into());
+    };
+    let outcome_destination = destination.clone();
+    let worker = Arc::clone(&state.worker);
+    tauri::async_runtime::spawn_blocking(move || {
+        worker.export(&path, &replacements, "materials", &destination, None)
+    })
+    .await
+    .map_err(|e| format!("预览工作进程意外停止：{e}"))?
+    .map(|summary| ExportOutcome {
+        destination: resources::path_string(&outcome_destination).unwrap_or_default(),
+        replaced: summary.replaced,
+        block_count: summary.block_count,
+    })
+}
+
+#[tauri::command]
 async fn block_catalog(state: State<'_, HostState>) -> Result<Vec<String>, String> {
     let resources = state.resources.clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -493,6 +543,7 @@ fn run() -> Result<(), String> {
             export_schematic,
             block_catalog,
             block_icons,
+            export_materials,
         ])
         .run(tauri::generate_context!())
         .map_err(|e| format!("无法启动 Litematica Preview：{e}"))
