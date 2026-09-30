@@ -104,18 +104,39 @@ pub fn export_materials_xlsx(
 }
 
 /// Merges per-state counts into per-block totals, dropping air, sorted by
-/// count descending (then by id for stability) like the template.
+/// count descending (then by id for stability) like the template. Blocks
+/// without an item of their own count as the item that places them, as in
+/// Litematica's own material list.
 fn aggregate_materials(schematic: &UniversalSchematic) -> Vec<(String, i64)> {
     let mut totals: HashMap<String, i64> = HashMap::new();
     for (state, count) in schematic.count_block_types() {
         if is_air(&state.name) {
             continue;
         }
-        *totals.entry(state.name.to_string()).or_default() += count as i64;
+        *totals.entry(item_for_material(&state.name)).or_default() += count as i64;
     }
     let mut materials: Vec<(String, i64)> = totals.into_iter().collect();
     materials.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
     materials
+}
+
+/// The item a player stocks for a block: wall-mounted variants have no item
+/// of their own, so they join their standing base (`oak_wall_sign` →
+/// `oak_sign`, `redstone_wall_torch` → `redstone_torch`, `wall_torch` →
+/// `torch`, `wither_skeleton_wall_skull` → `wither_skeleton_skull`), exactly
+/// how Litematica's material list reports them.
+fn item_for_material(block: &str) -> String {
+    let id = block.strip_prefix("minecraft:").unwrap_or(block);
+    if let Some(base) = id.strip_prefix("wall_") {
+        return format!("minecraft:{base}");
+    }
+    match id.find("_wall_") {
+        Some(index) => {
+            let tail = index + "_wall_".len();
+            format!("minecraft:{}{}", &id[..index + 1], &id[tail..])
+        }
+        None => block.to_string(),
+    }
 }
 
 pub(crate) fn is_air(name: &str) -> bool {
