@@ -253,6 +253,50 @@ fn wall_variants_merge_into_the_item_that_places_them() {
 }
 
 #[test]
+fn sheet_rows_are_strictly_ascending_and_unique() {
+    // Regression: the side-by-side layout wrote the container rows (15..)
+    // again after the material rows (15..), producing duplicate out-of-order
+    // <row> numbers that Excel repairs by deleting the container cells.
+    let model = container_schematic(vec![(
+        (0, 0, 0),
+        "minecraft:chest",
+        vec![item("minecraft:stone", 64), item("minecraft:diamond", 5)],
+    )]);
+    let data = nucleation::formats::litematic::to_litematic(&model).unwrap();
+    let export = export_materials_xlsx(&data, "行序", &[]).expect("export workbook");
+    let sheet = workbook_sheet(&export.data);
+    let rows: Vec<u32> = extract_numbers(&sheet, r#"<row r=""#);
+    assert!(!rows.is_empty());
+    assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "rows must be strictly ascending: {rows:?}");
+
+    // Cells within a row are ascending too (A-D then F-J in row 15).
+    let row15 = &sheet[sheet.find(r#"<row r="15">"#).expect("row 15")..];
+    let row15 = &row15[..row15.find("</row>").expect("row close")];
+    let columns: Vec<u32> = row15
+        .split(r#"<c r=""#)
+        .skip(1)
+        .filter_map(|part| {
+            let end = part.find('"')?;
+            let letters = &part[..end];
+            let split = letters.find(|c: char| !c.is_ascii_uppercase())?;
+            Some(letters[..split].bytes().fold(0u32, |acc, b| acc * 26 + u32::from(b - b'A' + 1)))
+        })
+        .collect();
+    assert!(columns.windows(2).all(|pair| pair[0] < pair[1]), "cells must be ascending: {columns:?}");
+}
+
+/// Pulls every integer that follows `marker` in the XML.
+fn extract_numbers(xml: &str, marker: &str) -> Vec<u32> {
+    xml.split(marker)
+        .skip(1)
+        .filter_map(|part| {
+            let end = part.find('"')?;
+            part[..end].parse().ok()
+        })
+        .collect()
+}
+
+#[test]
 fn a_projection_without_containers_leaves_the_section_empty() {
     let data = nucleation::formats::litematic::to_litematic(&schematic(&[(
         0,
