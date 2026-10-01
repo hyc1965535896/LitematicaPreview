@@ -340,47 +340,40 @@ fn box_count(count: i64) -> f64 {
     (((count as f64) * 10.0) / BOX_CAPACITY).ceil().max(1.0) / 10.0
 }
 
-/// Minimal OOXML package writer. Cells are grouped into `<row>` elements,
-/// which Excel and openpyxl require even though the references are explicit.
+/// Minimal OOXML package writer. Cells are collected and emitted grouped
+/// into `<row>` elements sorted by row number, cells sorted by column —
+/// Excel requires strictly ascending unique rows and silently drops rows
+/// otherwise (openpyxl and WPS tolerate the disorder, which is why the bug
+/// only showed as an Excel repair dialog).
 struct SheetXml {
-    rows: Vec<String>,
-    current: u32,
-    cells: Vec<String>,
+    /// `(row, column, cell xml)` in write order; sorted on output.
+    cells: Vec<(u32, u32, String)>,
     merges: Vec<String>,
+}
+
+/// Splits a cell reference like `AB15` into `(15, 28)`.
+fn row_and_column(reference: &str) -> (u32, u32) {
+    let column = reference
+        .find(|c: char| !c.is_ascii_uppercase())
+        .expect("cell column letters");
+    let (letters, row) = reference.split_at(column);
+    let number = letters
+        .bytes()
+        .fold(0u32, |acc, letter| acc * 26 + u32::from(letter - b'A' + 1));
+    (row.parse().expect("cell row number"), number)
 }
 
 impl SheetXml {
     fn new() -> Self {
         SheetXml {
-            rows: Vec::new(),
-            current: 0,
             cells: Vec::new(),
             merges: Vec::new(),
         }
     }
 
-    fn flush(&mut self) {
-        if self.cells.is_empty() {
-            return;
-        }
-        self.rows.push(format!(
-            r#"<row r="{}">{}</row>"#,
-            self.current,
-            self.cells.join("")
-        ));
-        self.cells.clear();
-    }
-
     fn place(&mut self, reference: &str, body: String) {
-        let row = reference
-            .trim_start_matches(|c: char| c.is_ascii_uppercase())
-            .parse::<u32>()
-            .expect("cell row number");
-        if row != self.current {
-            self.flush();
-            self.current = row;
-        }
-        self.cells.push(body);
+        let (row, column) = row_and_column(reference);
+        self.cells.push((row, column, body));
     }
 
     fn cell(&mut self, reference: &str, content: &str, style: u8, value_type: &str) {
@@ -441,13 +434,23 @@ impl SheetXml {
             ));
         }
         body.push_str("</cols><sheetData>");
-        body.push_str(&self.rows.join(""));
-        if !self.cells.is_empty() {
-            body.push_str(&format!(
-                r#"<row r="{}">{}</row>"#,
-                self.current,
-                self.cells.join("")
-            ));
+        // Both tables write into the same rows side by side, so sort by row
+        // then column and emit one <row> per row number.
+        let mut cells = self.cells.clone();
+        cells.sort_unstable_by_key(|(row, column, _)| (*row, *column));
+        let mut current = 0u32;
+        for (index, (row, _, cell)) in cells.iter().enumerate() {
+            if *row != current {
+                if index > 0 {
+                    body.push_str("</row>");
+                }
+                current = *row;
+                body.push_str(&format!(r#"<row r="{current}">"#));
+            }
+            body.push_str(cell);
+        }
+        if !cells.is_empty() {
+            body.push_str("</row>");
         }
         body.push_str("</sheetData>");
         if !self.merges.is_empty() {
