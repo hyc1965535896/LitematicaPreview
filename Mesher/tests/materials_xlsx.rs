@@ -297,6 +297,40 @@ fn extract_numbers(xml: &str, marker: &str) -> Vec<u32> {
 }
 
 #[test]
+fn box_counts_follow_the_item_stack_size() {
+    // Hopper minecarts and shulker boxes do not stack (27 per box); signs
+    // stack to 16 (432 per box); stone stays 64 (1728 per box).
+    let model = container_schematic(vec![(
+        (0, 0, 0),
+        "minecraft:chest",
+        vec![
+            item("minecraft:hopper_minecart", 100),
+            item("minecraft:cherry_sign", 56),
+            item("minecraft:shulker_box", 2),
+            item("minecraft:stone", 64),
+        ],
+    )]);
+    // Give the chest a bed neighbour so the material table covers an
+    // unstackable block too.
+    let data = nucleation::formats::litematic::to_litematic(&model).unwrap();
+    let export = export_materials_xlsx(&data, "堆叠", &[]).expect("export workbook");
+    let sheet = workbook_sheet(&export.data);
+    // Container rows start at 15: sorted by total desc — stone 64, minecart
+    // 100... actually minecart 100 first, then stone 64, sign 56, box 2.
+    assert_eq!(cell_value(&sheet, "H15"), "hopper_minecart");
+    assert_eq!(cell_value(&sheet, "I15"), "100");
+    assert_eq!(cell_value(&sheet, "J15"), "3.8"); // 100 / 27
+    assert_eq!(cell_value(&sheet, "H17"), "cherry_sign");
+    assert_eq!(cell_value(&sheet, "J17"), "0.2"); // 56 / 432
+    assert_eq!(cell_value(&sheet, "H18"), "shulker_box");
+    assert_eq!(cell_value(&sheet, "J18"), "0.1"); // 2 / 27
+    // Material row: chest itself still stacks to 64 -> 0.1.
+    let chest_row = cell_value(&sheet, "A15");
+    assert_eq!(chest_row, "箱子");
+    assert_eq!(cell_value(&sheet, "D15"), "0.1");
+}
+
+#[test]
 fn a_projection_without_containers_leaves_the_section_empty() {
     let data = nucleation::formats::litematic::to_litematic(&schematic(&[(
         0,
