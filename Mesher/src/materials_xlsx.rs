@@ -16,8 +16,6 @@ use zip::ZipWriter;
 use crate::containers::{self, ContainerMaterials};
 use crate::replace::{apply_replacements, BlockReplacement};
 
-const BOX_CAPACITY: f64 = 1728.0; // 27 stacks of 64 — Litematica's "盒数量"
-
 /// Cell style indexes into `xl/styles.xml`: bold text, thin borders, text and
 /// numbers inside a table, and the grey table header.
 const STYLE_BOLD: u8 = 1;
@@ -304,7 +302,8 @@ fn build_workbook(
         sheet.string_cell(&format!("A{row}"), zh_name(name).unwrap_or(id), false);
         sheet.string_cell(&format!("B{row}"), id, false);
         sheet.number_cell(&format!("C{row}"), *count as f64, "0");
-        sheet.number_cell(&format!("D{row}"), box_count(*count), "0.0");
+        let stack = max_stack_size(name);
+        sheet.number_cell(&format!("D{row}"), box_count(*count, stack), "0.0");
     }
     // Container contents: one row per item, grouped by the container it sits
     // in. The container name is merged over its rows so each group reads as
@@ -324,7 +323,7 @@ fn build_workbook(
             sheet.string_cell(&format!("G{row}"), zh_name(item).unwrap_or(item_id), false);
             sheet.string_cell(&format!("H{row}"), item_id, false);
             sheet.number_cell(&format!("I{row}"), *count as f64, "0");
-            sheet.number_cell(&format!("J{row}"), box_count(*count), "0.0");
+            sheet.number_cell(&format!("J{row}"), box_count(*count, max_stack_size(item)), "0.0");
             row += 1;
         }
         if row > first + 1 {
@@ -335,9 +334,78 @@ fn build_workbook(
     write_package(&sheet).expect("xlsx buffer write")
 }
 
-/// Boxes of 1728 (27 stacks of 64), rounded up to a tenth and never below 0.1.
-fn box_count(count: i64) -> f64 {
-    (((count as f64) * 10.0) / BOX_CAPACITY).ceil().max(1.0) / 10.0
+/// Boxes of 27 stacks, rounded up to a tenth and never below 0.1. The stack
+/// size follows the item: 64 for most blocks, 16 for snowballs, eggs, signs
+/// and the like, 1 for minecarts, shulker boxes, boats, buckets, tools — 481
+/// hopper minecarts need 17.9 boxes, not 0.3.
+fn box_count(count: i64, stack: u32) -> f64 {
+    let capacity = 27.0 * f64::from(stack);
+    (((count as f64) * 10.0) / capacity).ceil().max(1.0) / 10.0
+}
+
+/// The maximum stack size of an item, as in the vanilla registry.
+fn max_stack_size(item_id: &str) -> u32 {
+    let id = item_id.strip_prefix("minecraft:").unwrap_or(item_id);
+    // Unstackable families (max 1): minecarts, boats, rafts, buckets,
+    // shulker boxes, beds, tools, weapons, armor, plus one-off gear.
+    if id.ends_with("_minecart")
+        || id.ends_with("_boat")
+        || id == "bamboo_raft"
+        || id == "bamboo_chest_raft"
+        || id.ends_with("_bucket")
+        || id.ends_with("_shulker_box")
+        || id.ends_with("_bed")
+        || id.contains("_sword")
+        || id.contains("_pickaxe")
+        || id.contains("_axe")
+        || id.contains("_shovel")
+        || id.contains("_hoe")
+        || id.contains("_helmet")
+        || id.contains("_chestplate")
+        || id.contains("_leggings")
+        || id.contains("_boots")
+        || id.ends_with("_horse_armor")
+        || id.starts_with("music_disc_")
+        || matches!(
+            id,
+            "bow"
+                | "crossbow"
+                | "trident"
+                | "mace"
+                | "shield"
+                | "elytra"
+                | "shears"
+                | "flint_and_steel"
+                | "fishing_rod"
+                | "brush"
+                | "carrot_on_a_stick"
+                | "warped_fungus_on_a_stick"
+                | "totem_of_undying"
+                | "saddle"
+                | "bundle"
+                | "goat_horn"
+                | "potion"
+                | "mushroom_stew"
+                | "rabbit_stew"
+                | "beetroot_soup"
+                | "suspicious_stew"
+        )
+    {
+        return 1;
+    }
+    // Sixteen-stack items: snowballs, eggs, ender pearls, signs (also
+    // hanging signs), banners, armor stands, bottles.
+    if id.ends_with("_sign") || id.ends_with("_banner") {
+        return 16;
+    }
+    if matches!(
+        id,
+        "snowball" | "egg" | "blue_egg" | "brown_egg" | "ender_pearl" | "armor_stand"
+            | "experience_bottle" | "honey_bottle" | "ominous_bottle"
+    ) {
+        return 16;
+    }
+    64
 }
 
 /// Minimal OOXML package writer. Cells are collected and emitted grouped
