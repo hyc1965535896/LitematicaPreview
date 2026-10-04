@@ -2,6 +2,7 @@
 
 ## Features
 
+- Fix box counts assuming every item stacks to 64: counts now divide by the item's real max stack size like Litematica — minecarts, shulker boxes, boats, buckets, beds, tools and armor hold 27 per box, snowballs/eggs/signs/banners hold 432 (481 hopper minecarts now report 17.9 boxes instead of 0.3).
 - Fix the side-by-side workbook writing duplicate out-of-order `<row>` numbers, which Excel "repairs" by deleting the container cells (openpyxl/WPS tolerated the disorder, Excel did not).
 - Merge wall-mounted blocks into the item that places them in the material list (墙上的告示牌 → 告示牌, 墙上的红石火把 → 红石火把, wall torches, skulls, heads, banners, hanging signs), matching Litematica's own item-based list so the export works as a restocking list.
 - Read container contents into the material list export. The "容器内材料种类" count and the "投影容器列表" table (container name, item name, item id, total, box count) are filled from each region's block entities, so chests, hoppers, droppers, dispensers, crafter, barrels and shulker boxes are listed with the items stored inside them. Contents are aggregated per container type and sorted by amount; a shulker box inside another container counts as one item. Item names use the client's Simplified Chinese names.
