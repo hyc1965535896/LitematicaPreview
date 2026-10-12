@@ -1,3 +1,9 @@
+# v0.3.2
+
+## Features
+
+- Add a "渲染材质包" setting so the preview can render with a Minecraft resource pack: pick any pack `.zip` and it is layered on top of the bundled vanilla assets, exactly like Minecraft's own pack order, so packs that only ship textures still work. Selecting or clearing a pack re-renders the schematic that is already open. Supports block textures and models; shaders, connected textures (CTM) and custom model loaders are not applied, and blocks a pack does not cover keep their vanilla textures.
+
 # v0.3.1
 
 ## Features
