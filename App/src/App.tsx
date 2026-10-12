@@ -90,7 +90,7 @@ type PreviewSettings = {
   multithreadingEnabled: boolean
   threadCount: number
   conservativeMemoryScheduling: boolean
-  resourcePack: string | null
+  resourcePacks: string[]
 }
 type Loading = {
   path: string
@@ -120,7 +120,7 @@ const defaultPreviewSettings: PreviewSettings = {
   multithreadingEnabled: true,
   threadCount: 4,
   conservativeMemoryScheduling: false,
-  resourcePack: null,
+  resourcePacks: [],
 }
 const fileName = (path: string) => path.split(/[\\/]/).pop() || path
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -201,10 +201,11 @@ export function savedPreviewSettings(): PreviewSettings {
           : typeof settings.speedFirst === "boolean"
             ? !settings.speedFirst
             : defaultPreviewSettings.conservativeMemoryScheduling,
-      resourcePack:
-        typeof settings.resourcePack === "string" && settings.resourcePack.trim() !== ""
-          ? settings.resourcePack
-          : defaultPreviewSettings.resourcePack,
+      resourcePacks: Array.isArray(settings.resourcePacks)
+        ? settings.resourcePacks.filter(
+            (pack): pack is string => typeof pack === "string" && pack.trim() !== "",
+          )
+        : defaultPreviewSettings.resourcePacks,
     }
   } catch {
     return defaultPreviewSettings
@@ -379,11 +380,14 @@ export default function App({ initialError }: { initialError?: string }) {
   }, [])
 
   const loadPath = useCallback(
-    async (path: string, nextRules?: BlockReplacement[]) => {
+    async (path: string, nextRules?: BlockReplacement[], overrides?: Partial<PreviewSettings>) => {
       if (!mounted.current) return
       // Read current settings without rebuilding startup and drag-and-drop subscriptions.
       // This request keeps its own snapshot even if settings change during decoding.
-      const settings = previewSettingsRef.current
+      // An override lets a settings change re-render immediately without waiting
+      // for the next render to observe the new value.
+      const current = previewSettingsRef.current
+      const settings = overrides ? { ...current, ...overrides } : current
       const speedFirst = settings.multithreadingEnabled && !settings.conservativeMemoryScheduling
       const rules = nextRules ?? (replacementsRef.current.path === path ? replacementsRef.current.rules : [])
       const options = {
@@ -392,7 +396,7 @@ export default function App({ initialError }: { initialError?: string }) {
         threadCount: settings.multithreadingEnabled ? settings.threadCount : null,
         speedFirst,
         replacements: rules,
-        resourcePack: settings.resourcePack,
+        resourcePacks: settings.resourcePacks,
       }
       const id = ++generation.current
       clearView()
@@ -584,29 +588,40 @@ export default function App({ initialError }: { initialError?: string }) {
     }
   }, [isCurrent, loadPath])
 
-  // Apply a resource-pack change and, if a schematic is already open, re-decode
-  // it so the new textures appear immediately rather than on the next open.
-  const applyResourcePack = useCallback(
-    (pack: string | null) => {
-      if (previewSettingsRef.current.resourcePack === pack) return
-      updatePreviewSettings({ resourcePack: pack })
-      if (loaded) void loadPath(loaded.path)
+  // Apply a resource-pack list change and, if a schematic is already open,
+  // re-decode it so the new textures appear immediately. The list order is
+  // Minecraft's own: the first pack wins, later packs fill in the rest.
+  const applyResourcePacks = useCallback(
+    (packs: string[]) => {
+      const current = previewSettingsRef.current.resourcePacks
+      if (current.length === packs.length && current.every((pack, index) => pack === packs[index])) {
+        return
+      }
+      updatePreviewSettings({ resourcePacks: packs })
+      if (loaded) void loadPath(loaded.path, undefined, { resourcePacks: packs })
     },
     [updatePreviewSettings, loadPath, loaded],
   )
 
-  const chooseResourcePack = useCallback(async () => {
+  const addResourcePacks = useCallback(async () => {
     if (pickingPack) return
     setPickingPack(true)
     try {
-      const path = await invoke<string | null>("choose_resource_pack")
-      if (path) applyResourcePack(path)
+      // The picker allows a multi-selection, appended in the order chosen.
+      const paths = await invoke<string[]>("choose_resource_pack")
+      if (paths.length > 0) {
+        const selected = [...previewSettingsRef.current.resourcePacks]
+        for (const path of paths) {
+          if (!selected.includes(path)) selected.push(path)
+        }
+        applyResourcePacks(selected)
+      }
     } catch (error) {
       setNotice({ intent: "error", message: errorMessage(error) })
     } finally {
       if (mounted.current) setPickingPack(false)
     }
-  }, [applyResourcePack, pickingPack])
+  }, [applyResourcePacks, pickingPack])
 
   const nativeAction = useCallback(
     async (command: "register_associations" | "unregister_associations" | "show_licenses") => {
@@ -1594,32 +1609,88 @@ export default function App({ initialError }: { initialError?: string }) {
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex min-w-0 flex-col">
                         <span className="font-medium">渲染材质包</span>
-                        <span className="text-sm text-muted break-all">
-                          {previewSettings.resourcePack
-                            ? fileName(previewSettings.resourcePack)
+                        <span className="text-sm text-muted">
+                          {previewSettings.resourcePacks.length > 0
+                            ? `已选择 ${previewSettings.resourcePacks.length} 个（列表越靠下优先级越高）`
                             : "默认（原版纹理）"}
                         </span>
                       </div>
                       <div className="ml-auto flex items-center gap-2 shrink-0">
-                        <Button
-                          size="small"
-                          disabled={pickingPack}
-                          onClick={() => void chooseResourcePack()}
-                        >
-                          {pickingPack ? "选择中…" : "选择材质包…"}
+                        <Button size="small" disabled={pickingPack} onClick={() => void addResourcePacks()}>
+                          {pickingPack ? "选择中…" : "添加材质包…"}
                         </Button>
                         <Button
                           size="small"
                           appearance="subtle"
-                          disabled={!previewSettings.resourcePack}
-                          onClick={() => applyResourcePack(null)}
+                          disabled={previewSettings.resourcePacks.length === 0}
+                          onClick={() => applyResourcePacks([])}
                         >
-                          恢复默认
+                          全部清除
                         </Button>
                       </div>
                     </div>
+                    {previewSettings.resourcePacks.length > 0 && (
+                      <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                        {previewSettings.resourcePacks.map((pack, index) => (
+                          <li
+                            key={pack}
+                            className="flex items-center gap-2 rounded-md border border-border px-2 py-1"
+                          >
+                            <span className="w-5 shrink-0 text-center text-xs text-muted">
+                              {index + 1}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-sm" title={pack}>
+                              {fileName(pack)}
+                            </span>
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              disabled={index === 0}
+                              aria-label={`将 ${fileName(pack)} 上移`}
+                              title="上移（优先）"
+                              onClick={() => {
+                                const next = [...previewSettings.resourcePacks]
+                                ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+                                applyResourcePacks(next)
+                              }}
+                            >
+                              ↑
+                            </Button>
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              disabled={index === previewSettings.resourcePacks.length - 1}
+                              aria-label={`将 ${fileName(pack)} 下移`}
+                              title="下移"
+                              onClick={() => {
+                                const next = [...previewSettings.resourcePacks]
+                                ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+                                applyResourcePacks(next)
+                              }}
+                            >
+                              ↓
+                            </Button>
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              aria-label={`移除 ${fileName(pack)}`}
+                              title="移除"
+                              onClick={() =>
+                                applyResourcePacks(
+                                  previewSettings.resourcePacks.filter((_, i) => i !== index),
+                                )
+                              }
+                            >
+                              ✕
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     <p className="m-0 text-sm leading-relaxed text-muted">
-                      选择一个 Minecraft 材质包（.zip），它会叠加在随附的原版纹理之上用于渲染预览；更改会立即对已打开的投影重新渲染。仅替换方块纹理与模型，不支持光影、连接纹理（CTM）、自定义模型加载器等特性。若材质包与投影的游戏版本差异较大，未覆盖的方块会回退到原版纹理。
+                      可添加多个 Minecraft 材质包（.zip），按 Minecraft 的资源包叠加顺序应用在随附的原版纹理之上：
+                      <strong>列表越靠下优先级越高</strong>
+                      ，靠下的包覆盖靠上的包，没覆盖到的方块由靠上的包或原版补齐。更改会立即对已打开的投影重新渲染。仅替换方块纹理与模型，不支持光影、连接纹理（CTM）、自定义模型加载器等特性。
                     </p>
                   </div>
                   <div className="flex flex-col gap-3">
