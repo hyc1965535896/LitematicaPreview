@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "android"))]
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,10 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) struct DecoderRequest {
     pub path: PathBuf,
     pub pack_path: PathBuf,
+    /// Optional user-selected resource pack overlaid on top of the bundled
+    /// vanilla pack. Empty means render with vanilla textures only.
+    #[serde(default)]
+    pub custom_pack_path: Option<PathBuf>,
     pub chunk_size: Option<u16>,
     pub thread_count: Option<u8>,
     pub speed_first: bool,
@@ -33,10 +38,16 @@ pub(crate) struct ExportRequest {
 }
 
 pub struct DecoderProcess {
+    #[cfg(not(target_os = "android"))]
     child: Child,
+    // Android cannot spawn a decoder subprocess; the decoder runs on an
+    // in-process thread over the same loopback protocol instead.
+    #[cfg(target_os = "android")]
+    worker: Option<std::thread::JoinHandle<()>>,
     stream: Option<TcpStream>,
     // Retain the child's stdin so its host-lifetime watchdog remains active
     // during native calls.
+    #[cfg(not(target_os = "android"))]
     input: Option<ChildStdin>,
     memory_limit_mb: Option<u16>,
     #[cfg(windows)]
@@ -59,9 +70,12 @@ impl DecoderProcess {
             .local_addr()
             .map_err(|e| format!("无法找到解码器连接：{e}"))?;
         let token = authentication_token()?;
+        #[cfg(not(target_os = "android"))]
         let executable = std::env::current_exe()
             .map_err(|e| format!("无法找到解码器可执行文件：{e}"))?;
+        #[cfg(not(target_os = "android"))]
         let mut command = Command::new(executable);
+        #[cfg(not(target_os = "android"))]
         command
             .arg("--preview-worker")
             .arg(address.port().to_string())
@@ -77,13 +91,28 @@ impl DecoderProcess {
         }
         #[cfg(windows)]
         let job = decoder_job(memory_limit_mb)?;
+        #[cfg(not(target_os = "android"))]
         let mut child = command
             .spawn()
             .map_err(|e| format!("无法启动解码进程：{e}"))?;
+        #[cfg(not(target_os = "android"))]
         let input = child.stdin.take();
+        #[cfg(target_os = "android")]
+        let worker = std::thread::Builder::new()
+            .name("preview-worker".into())
+            .spawn(move || {
+                if let Err(error) = worker_serve(address, token, memory_limit_mb) {
+                    eprintln!("{error}");
+                }
+            })
+            .map_err(|e| format!("无法启动解码线程：{e}"))?;
         let mut process = Self {
+            #[cfg(not(target_os = "android"))]
             child,
+            #[cfg(target_os = "android")]
+            worker: Some(worker),
             stream: None,
+            #[cfg(not(target_os = "android"))]
             input,
             memory_limit_mb,
             #[cfg(windows)]
@@ -91,6 +120,7 @@ impl DecoderProcess {
         };
         #[cfg(windows)]
         process.assign_job()?;
+        #[cfg(not(target_os = "android"))]
         process
             .input
             .as_mut()
@@ -107,6 +137,7 @@ impl DecoderProcess {
 
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         loop {
+            #[cfg(not(target_os = "android"))]
             if let Some(status) = process
                 .child
                 .try_wait()
@@ -115,6 +146,14 @@ impl DecoderProcess {
                 return Err(format!(
                     "解码进程在启动期间停止（{status}）。"
                 ));
+            }
+            #[cfg(target_os = "android")]
+            if process
+                .worker
+                .as_ref()
+                .is_some_and(std::thread::JoinHandle::is_finished)
+            {
+                return Err("解码线程在启动期间停止。".into());
             }
             if Instant::now() >= deadline {
                 return Err("解码进程未能在十秒内连接。".into());
@@ -153,7 +192,14 @@ impl DecoderProcess {
     }
 
     pub fn pid(&self) -> u32 {
-        self.child.id()
+        #[cfg(not(target_os = "android"))]
+        {
+            self.child.id()
+        }
+        #[cfg(target_os = "android")]
+        {
+            std::process::id()
+        }
     }
 
     /// Loads one preview request from the isolated decoder.
@@ -164,6 +210,7 @@ impl DecoderProcess {
         &mut self,
         path: &Path,
         pack_path: &Path,
+        custom_pack_path: Option<&Path>,
         chunk_size: Option<u16>,
         thread_count: Option<u8>,
         speed_first: bool,
@@ -175,6 +222,7 @@ impl DecoderProcess {
             DecoderRequest {
                 path: path.to_path_buf(),
                 pack_path: pack_path.to_path_buf(),
+                custom_pack_path: custom_pack_path.map(Path::to_path_buf),
                 chunk_size,
                 thread_count,
                 speed_first,
@@ -189,6 +237,7 @@ impl DecoderProcess {
         &mut self,
         path: &Path,
         pack_path: &Path,
+        custom_pack_path: Option<&Path>,
         chunk_size: Option<u16>,
         thread_count: Option<u8>,
         speed_first: bool,
@@ -201,6 +250,7 @@ impl DecoderProcess {
             DecoderRequest {
                 path: path.to_path_buf(),
                 pack_path: pack_path.to_path_buf(),
+                custom_pack_path: custom_pack_path.map(Path::to_path_buf),
                 chunk_size,
                 thread_count,
                 speed_first,
@@ -225,6 +275,7 @@ impl DecoderProcess {
             DecoderRequest {
                 path: path.to_path_buf(),
                 pack_path: PathBuf::new(),
+                custom_pack_path: None,
                 chunk_size: None,
                 thread_count: None,
                 speed_first: false,
@@ -275,31 +326,47 @@ impl DecoderProcess {
     }
 
     fn failure(&mut self, error: io::Error) -> String {
-        // EOF can precede the operating system's exit notification. Allow brief
-        // teardown, but bound the wait if the peer remains stuck.
-        let deadline = Instant::now() + Duration::from_millis(250);
-        loop {
-            match self.child.try_wait() {
-                Ok(Some(status)) => {
-                    return format!("解码进程意外停止（{status}），无法加载投影文件。{}", process_limit_message(self.memory_limit_mb));
+        #[cfg(not(target_os = "android"))]
+        {
+            // EOF can precede the operating system's exit notification. Allow brief
+            // teardown, but bound the wait if the peer remains stuck.
+            let deadline = Instant::now() + Duration::from_millis(250);
+            loop {
+                match self.child.try_wait() {
+                    Ok(Some(status)) => {
+                        return format!("解码进程意外停止（{status}），无法加载投影文件。{}", process_limit_message(self.memory_limit_mb));
+                    }
+                    Ok(None) if Instant::now() < deadline => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    _ => return format!("解码器连接失败：{error}"),
                 }
-                Ok(None) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                _ => return format!("解码器连接失败：{error}"),
             }
         }
+        #[cfg(target_os = "android")]
+        format!("解码器连接失败：{error}")
     }
 }
 
 impl Drop for DecoderProcess {
     fn drop(&mut self) {
-        // Closing stdin makes the child watchdog terminate the process, including
-        // during native calls. kill/wait prevents zombies during ordinary replacement.
-        self.input.take();
-        self.stream.take();
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        #[cfg(not(target_os = "android"))]
+        {
+            // Closing stdin makes the child watchdog terminate the process, including
+            // during native calls. kill/wait prevents zombies during ordinary replacement.
+            self.input.take();
+            self.stream.take();
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+        #[cfg(target_os = "android")]
+        {
+            // Closing the stream ends the worker thread's request loop once any
+            // in-flight native call returns. Detach rather than join: a decoder
+            // wedged in native code must not block the host.
+            self.stream.take();
+            self.worker.take();
+        }
     }
 }
 
@@ -393,6 +460,32 @@ pub fn run(port: &std::ffi::OsStr) -> Result<(), String> {
         .set_nodelay(true)
         .and_then(|()| stream.write_all(&token))
         .map_err(|e| format!("无法对解码器进行身份验证：{e}"))?;
+    serve(stream, memory_limit_mb)
+}
+
+/// Connects to the host and serves decode requests. Used by the Android
+/// in-process worker thread, which has no inherited stdin pipe.
+#[cfg(target_os = "android")]
+fn worker_serve(
+    address: SocketAddr,
+    token: [u8; TOKEN_BYTES],
+    memory_limit_mb: Option<u16>,
+) -> Result<(), String> {
+    PreviewOptions {
+        memory_limit_mb,
+        ..PreviewOptions::default()
+    }
+    .validate()?;
+    let mut stream = TcpStream::connect_timeout(&address, STARTUP_TIMEOUT)
+        .map_err(|e| format!("无法连接到预览主机：{e}"))?;
+    stream
+        .set_nodelay(true)
+        .and_then(|()| stream.write_all(&token))
+        .map_err(|e| format!("无法对解码器进行身份验证：{e}"))?;
+    serve(stream, memory_limit_mb)
+}
+
+fn serve(mut stream: TcpStream, memory_limit_mb: Option<u16>) -> Result<(), String> {
     let mut pack = None;
     loop {
         let request = read_frame(&mut stream, MAX_REQUEST_BYTES)
@@ -416,6 +509,7 @@ pub fn run(port: &std::ffi::OsStr) -> Result<(), String> {
             crate::preview::decode(
                 &request.path,
                 &request.pack_path,
+                request.custom_pack_path.as_deref(),
                 &mut pack,
                 options,
                 &request.replacements,
