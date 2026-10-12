@@ -79,6 +79,7 @@ type Bootstrap = {
   version: string
   requestId: number
   maxWorkerThreads: number
+  mobile: boolean
 }
 type ThemePreference = "system" | "light" | "dark"
 type PreviewSettings = {
@@ -89,6 +90,7 @@ type PreviewSettings = {
   multithreadingEnabled: boolean
   threadCount: number
   conservativeMemoryScheduling: boolean
+  resourcePack: string | null
 }
 type Loading = {
   path: string
@@ -118,6 +120,7 @@ const defaultPreviewSettings: PreviewSettings = {
   multithreadingEnabled: true,
   threadCount: 4,
   conservativeMemoryScheduling: false,
+  resourcePack: null,
 }
 const fileName = (path: string) => path.split(/[\\/]/).pop() || path
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -198,6 +201,10 @@ export function savedPreviewSettings(): PreviewSettings {
           : typeof settings.speedFirst === "boolean"
             ? !settings.speedFirst
             : defaultPreviewSettings.conservativeMemoryScheduling,
+      resourcePack:
+        typeof settings.resourcePack === "string" && settings.resourcePack.trim() !== ""
+          ? settings.resourcePack
+          : defaultPreviewSettings.resourcePack,
     }
   } catch {
     return defaultPreviewSettings
@@ -224,6 +231,7 @@ export default function App({ initialError }: { initialError?: string }) {
   const [errorDetails, setErrorDetails] = useState(initialError || "")
   const [actionBusy, setActionBusy] = useState(false)
   const [choosing, setChoosing] = useState(false)
+  const [pickingPack, setPickingPack] = useState(false)
   const [replacements, setReplacements] = useState<{ path: string; rules: BlockReplacement[] }>({
     path: "",
     rules: [],
@@ -384,6 +392,7 @@ export default function App({ initialError }: { initialError?: string }) {
         threadCount: settings.multithreadingEnabled ? settings.threadCount : null,
         speedFirst,
         replacements: rules,
+        resourcePack: settings.resourcePack,
       }
       const id = ++generation.current
       clearView()
@@ -574,6 +583,30 @@ export default function App({ initialError }: { initialError?: string }) {
       if (mounted.current) setChoosing(false)
     }
   }, [isCurrent, loadPath])
+
+  // Apply a resource-pack change and, if a schematic is already open, re-decode
+  // it so the new textures appear immediately rather than on the next open.
+  const applyResourcePack = useCallback(
+    (pack: string | null) => {
+      if (previewSettingsRef.current.resourcePack === pack) return
+      updatePreviewSettings({ resourcePack: pack })
+      if (loaded) void loadPath(loaded.path)
+    },
+    [updatePreviewSettings, loadPath, loaded],
+  )
+
+  const chooseResourcePack = useCallback(async () => {
+    if (pickingPack) return
+    setPickingPack(true)
+    try {
+      const path = await invoke<string | null>("choose_resource_pack")
+      if (path) applyResourcePack(path)
+    } catch (error) {
+      setNotice({ intent: "error", message: errorMessage(error) })
+    } finally {
+      if (mounted.current) setPickingPack(false)
+    }
+  }, [applyResourcePack, pickingPack])
 
   const nativeAction = useCallback(
     async (command: "register_associations" | "unregister_associations" | "show_licenses") => {
@@ -966,22 +999,26 @@ export default function App({ initialError }: { initialError?: string }) {
                 关于与许可证
               </MenuItem>
               <MenuDivider />
-              <MenuGroup>
-                <MenuGroupHeader>文件关联</MenuGroupHeader>
-                <MenuItem
-                  disabled={actionBusy}
-                  onClick={() => void nativeAction("register_associations")}
-                >
-                  设为默认应用…
-                </MenuItem>
-                <MenuItem
-                  disabled={actionBusy}
-                  onClick={() => void nativeAction("unregister_associations")}
-                >
-                  移除文件关联
-                </MenuItem>
-              </MenuGroup>
-              <MenuDivider />
+              {bootstrap?.mobile ? null : (
+                <>
+                  <MenuGroup>
+                    <MenuGroupHeader>文件关联</MenuGroupHeader>
+                    <MenuItem
+                      disabled={actionBusy}
+                      onClick={() => void nativeAction("register_associations")}
+                    >
+                      设为默认应用…
+                    </MenuItem>
+                    <MenuItem
+                      disabled={actionBusy}
+                      onClick={() => void nativeAction("unregister_associations")}
+                    >
+                      移除文件关联
+                    </MenuItem>
+                  </MenuGroup>
+                  <MenuDivider />
+                </>
+              )}
               <MenuGroup>
                 <MenuGroupHeader>外观</MenuGroupHeader>
                 <MenuItemRadio name="theme" value="system">
@@ -1555,6 +1592,38 @@ export default function App({ initialError }: { initialError?: string }) {
                   </p>
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between gap-4">
+                      <div className="flex min-w-0 flex-col">
+                        <span className="font-medium">渲染材质包</span>
+                        <span className="text-sm text-muted break-all">
+                          {previewSettings.resourcePack
+                            ? fileName(previewSettings.resourcePack)
+                            : "默认（原版纹理）"}
+                        </span>
+                      </div>
+                      <div className="ml-auto flex items-center gap-2 shrink-0">
+                        <Button
+                          size="small"
+                          disabled={pickingPack}
+                          onClick={() => void chooseResourcePack()}
+                        >
+                          {pickingPack ? "选择中…" : "选择材质包…"}
+                        </Button>
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          disabled={!previewSettings.resourcePack}
+                          onClick={() => applyResourcePack(null)}
+                        >
+                          恢复默认
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="m-0 text-sm leading-relaxed text-muted">
+                      选择一个 Minecraft 材质包（.zip），它会叠加在随附的原版纹理之上用于渲染预览；更改会立即对已打开的投影重新渲染。仅替换方块纹理与模型，不支持光影、连接纹理（CTM）、自定义模型加载器等特性。若材质包与投影的游戏版本差异较大，未覆盖的方块会回退到原版纹理。
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between gap-4">
                       <Switch
                         label="限制解码器内存"
                         checked={previewSettings.memoryLimitEnabled}
@@ -1772,13 +1841,15 @@ export default function App({ initialError }: { initialError?: string }) {
                     本程序依据 GNU Affero 通用公共许可证第 3 版发行，不提供任何担保。在随附许可证条款允许的范围内可以重新分发。
                   </p>
                   <p className="text-muted">
-                    应用程序许可证与第三方声明已包含在安装目录中。
+                    {bootstrap?.mobile
+                      ? "许可证文本随应用内置资源分发。"
+                      : "应用程序许可证与第三方声明已包含在安装目录中。"}
                   </p>
                 </div>
               )}
             </DialogContent>
             <DialogActions>
-              {dialog === "about" && (
+              {dialog === "about" && !bootstrap?.mobile && (
                 <Button
                   disabled={actionBusy}
                   onClick={() => {
