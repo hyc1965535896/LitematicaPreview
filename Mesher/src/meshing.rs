@@ -11,6 +11,7 @@ use std::collections::{hash_map::Entry, HashMap};
 
 mod atlas;
 mod builder;
+mod signs_glue;
 
 type ChunkCoord = (i32, i32, i32);
 type IndexedBlock = (BlockPosition, u32);
@@ -20,6 +21,18 @@ pub(crate) struct CompactBlocks {
     palette: Vec<InputBlock>,
     block_count: i64,
     block_entity_count: i64,
+    /// Sign text with the block state that orients it, kept per chunk so each
+    /// mesh window emits exactly the quads its own voxels need.
+    signs: HashMap<ChunkCoord, Vec<SignRef>>,
+    /// Font providers of the loaded packs, resolved once per preview.
+    font_providers: Vec<crate::font_defs::BitmapProvider>,
+}
+
+/// One sign's text plus the state that decides its facing.
+pub(crate) struct SignRef {
+    pub position: BlockPosition,
+    pub yaw: u8,
+    pub text: crate::signs::SignText,
 }
 
 pub(crate) struct PaletteEntry {
@@ -38,6 +51,11 @@ pub(crate) struct CompactBlocksBuilder {
     // their logical source order without growing every stored block index.
     source_order: Option<Vec<(usize, u32)>>,
     source: usize,
+    /// Sign text per chunk, already oriented by the block state it sits on.
+    signs: HashMap<ChunkCoord, Vec<SignRef>>,
+    /// The loaded `InputBlock`s, so a sign's state can be resolved from the
+    /// region it was read from.
+    block_states: Vec<BlockState>,
 }
 
 impl CompactBlocksBuilder {
@@ -54,7 +72,24 @@ impl CompactBlocksBuilder {
             block_entity_count: 0,
             source_order: None,
             source: 0,
+            signs: HashMap::new(),
+            block_states: Vec::new(),
         })
+    }
+
+    /// Records one sign's text next to the chunk it sits in, so a mesh window
+    /// emits exactly the quads its own voxels need.
+    pub(crate) fn push_sign(
+        &mut self,
+        position: BlockPosition,
+        yaw: u8,
+        text: crate::signs::SignText,
+    ) -> Result<(), String> {
+        let coord = self.chunk_size.map_or((0, 0, 0), |size| chunk_coord(position, size));
+        let signs = self.signs.entry(coord).or_default();
+        signs.try_reserve(1).map_err(|e| e.to_string())?;
+        signs.push(SignRef { position, yaw, text });
+        Ok(())
     }
 
     pub(crate) fn begin_source(&mut self) -> Result<(), String> {
@@ -175,6 +210,8 @@ impl CompactBlocksBuilder {
             palette: self.palette,
             block_count: self.block_count,
             block_entity_count: self.block_entity_count,
+            signs: self.signs,
+            font_providers: Vec::new(),
         }
     }
 }
@@ -255,6 +292,20 @@ impl CompactBlocks {
             for entity in &region.entities {
                 builder.push_entity(entity)?;
             }
+            for block_entity in region.block_entities.values() {
+                let Some(text) = crate::signs::read(&block_entity.nbt, &block_entity.id) else {
+                    continue;
+                };
+                if text.is_empty() {
+                    continue;
+                }
+                let (x, y, z) = block_entity.position;
+                let position = BlockPosition::new(x, y, z);
+                let yaw = region
+                    .get_block(x, y, z)
+                    .map_or(0, crate::signs::state_yaw);
+                builder.push_sign(position, yaw, text)?;
+            }
             builder.add_block_entities(region.block_entities.len())?;
             // Drop each dense region before loading the next to bound peak volume storage.
         }
@@ -263,6 +314,12 @@ impl CompactBlocks {
 
     pub(crate) fn block_count(&self) -> i64 {
         self.block_count
+    }
+
+    /// The loaded packs' bitmap font providers, resolved from the pack archive
+    /// by the caller (the mesher only sees the parsed `ResourcePack`).
+    pub(crate) fn set_font_providers(&mut self, providers: Vec<crate::font_defs::BitmapProvider>) {
+        self.font_providers = providers;
     }
 
     /// Distinct non-air block states with voxel counts, sorted by count
@@ -316,6 +373,7 @@ impl CompactBlocks {
         &self,
         pack: &ResourcePackSource,
         config: &MesherConfig,
+        text_sprite: Option<&schematic_mesher::resource_pack::TextureData>,
     ) -> Result<TextureAtlas, String> {
         let positioned: Vec<_> = self
             .palette
@@ -341,8 +399,13 @@ impl CompactBlocks {
                 positioned[index as usize].then_some((pos, &self.palette[index as usize]))
             })
         });
-        atlas::build(pack.pack(), config, representatives.chain(actual_positions))
-            .map_err(|error| format!("无法准备投影纹理：{error}"))
+        atlas::build(
+            pack.pack(),
+            config,
+            representatives.chain(actual_positions),
+            text_sprite,
+        )
+        .map_err(|error| format!("无法准备投影纹理：{error}"))
     }
 
     fn context(
@@ -430,6 +493,8 @@ pub(super) struct ChunkMeshes<'a> {
     config: MesherConfig,
     atlas: TextureAtlas,
     atlas_only: Vec<bool>,
+    /// Glyph UVs of the sign-text sprite packed into `atlas`, if any.
+    cells: HashMap<char, crate::fonts::Cell>,
 }
 
 impl<'a> ChunkMeshes<'a> {
@@ -454,7 +519,18 @@ impl<'a> ChunkMeshes<'a> {
     ) -> Result<Self, String> {
         current()?;
         let config = mesher_config(config);
-        let atlas = source.atlas(pack, &config)?;
+        // Sign glyphs join the atlas as one sprite before it is packed, so the
+        // packer places it and every block UV stays valid.
+        let sheet = signs_glue::build_sheet(
+            source.signs.values().flatten().flat_map(|sign| sign.text.lines()),
+            &source.font_providers,
+            pack.pack(),
+        );
+        let atlas = source.atlas(pack, &config, sheet.as_ref().map(|sheet| &sheet.texture))?;
+        let cells = match &sheet {
+            Some(sheet) => signs_glue::resolve(&atlas, sheet),
+            None => HashMap::new(),
+        };
         let atlas_only = source
             .palette
             .iter()
@@ -469,6 +545,7 @@ impl<'a> ChunkMeshes<'a> {
             config,
             atlas,
             atlas_only,
+            cells,
         })
     }
 
@@ -558,6 +635,13 @@ impl<'a> ChunkMeshes<'a> {
             bounds,
         )?;
         mesh.chunk_coord = self.chunk_size.map(|_| *coord);
+        // Sign text rides in the cutout layer: the viewer alpha-tests it, and
+        // the glyph masks are already in the shared atlas this mesh references.
+        if !self.cells.is_empty() {
+            if let Some(signs) = self.source.signs.get(coord) {
+                signs_glue::append_text(signs, &self.cells, &mut mesh);
+            }
+        }
         Ok(mesh)
     }
 }
