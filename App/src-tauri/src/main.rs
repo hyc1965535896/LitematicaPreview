@@ -81,22 +81,27 @@ async fn choose_file(app: AppHandle, window: WebviewWindow) -> Result<Option<Str
 async fn choose_resource_pack(
     app: AppHandle,
     window: WebviewWindow,
-) -> Result<Option<String>, String> {
+) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
+        let Some(files) = app
+            .dialog()
             .file()
             .set_parent(&window)
-            .set_title("选择 Minecraft 材质包")
+            .set_title("选择 Minecraft 材质包（可多选）")
             .add_filter("Minecraft 材质包", &["zip"])
             .add_filter("所有文件", &["*"])
-            .blocking_pick_file()
-            .map(|file| {
-                let path = file
-                    .into_path()
-                    .map_err(|e| format!("无法打开所选材质包：{e}"))?;
-                resources::path_string(&path)
-            })
-            .transpose()
+            .blocking_pick_files()
+        else {
+            return Ok(Vec::new());
+        };
+        let mut paths = Vec::with_capacity(files.len());
+        for file in files {
+            let path = file
+                .into_path()
+                .map_err(|e| format!("无法打开所选材质包：{e}"))?;
+            paths.push(resources::path_string(&path)?);
+        }
+        Ok(paths)
     })
     .await
     .map_err(|e| format!("无法显示材质包选择器：{e}"))?
