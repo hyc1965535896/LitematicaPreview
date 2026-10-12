@@ -2,10 +2,10 @@ use std::cell::RefCell;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use litematica_preview_native::{BlockReplacement, ExportFormat, LoadedPreview, PreviewOptions};
 use nucleation::meshing::ResourcePackSource;
@@ -25,6 +25,10 @@ pub struct LoadOptions {
     speed_first: bool,
     #[serde(default)]
     replacements: Vec<BlockReplacement>,
+    /// Absolute path to a user-selected Minecraft resource pack (.zip). Omitted
+    /// or null renders with the bundled vanilla textures only.
+    #[serde(default)]
+    resource_pack: Option<String>,
 }
 
 fn required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -36,7 +40,9 @@ where
 }
 
 impl LoadOptions {
-    pub fn validate(self) -> Result<(PreviewOptions, Vec<BlockReplacement>), String> {
+    pub fn validate(
+        self,
+    ) -> Result<(PreviewOptions, Vec<BlockReplacement>, Option<PathBuf>), String> {
         let options = PreviewOptions {
             memory_limit_mb: self.memory_limit_mb,
             chunk_size: self.chunk_size,
@@ -45,7 +51,17 @@ impl LoadOptions {
         };
         options.validate()?;
         litematica_preview_native::validate_replacements(&self.replacements)?;
-        Ok((options, self.replacements))
+        let resource_pack = match self.resource_pack {
+            Some(path) if !path.trim().is_empty() => {
+                let path = PathBuf::from(path);
+                if !path.is_file() {
+                    return Err("所选材质包不存在或不是文件，请重新选择。".into());
+                }
+                Some(path)
+            }
+            _ => None,
+        };
+        Ok((options, self.replacements, resource_pack))
     }
 }
 
@@ -269,6 +285,7 @@ impl PreviewWorker {
         &self,
         path: &Path,
         pack_path: &Path,
+        custom_pack_path: Option<&Path>,
         request_id: u64,
         options: PreviewOptions,
         replacements: &[BlockReplacement],
@@ -307,6 +324,7 @@ impl PreviewWorker {
                 .load_stream(
                     path,
                     pack_path,
+                    custom_pack_path,
                     options.chunk_size,
                     options.thread_count,
                     options.speed_first,
@@ -428,6 +446,7 @@ impl PreviewWorker {
         &self,
         path: &Path,
         pack_path: &Path,
+        custom_pack_path: Option<&Path>,
         request_id: u64,
         options: PreviewOptions,
         replacements: &[BlockReplacement],
@@ -461,6 +480,7 @@ impl PreviewWorker {
             .load(
                 path,
                 pack_path,
+                custom_pack_path,
                 options.chunk_size,
                 options.thread_count,
                 options.speed_first,
@@ -856,7 +876,7 @@ mod tests {
         serde_json::from_value::<LoadOptions>(value)
             .map_err(|error| error.to_string())?
             .validate()
-            .map(|(options, _)| options)
+            .map(|(options, _, _)| options)
     }
 
     #[test]
@@ -1005,6 +1025,15 @@ mod tests {
     }
 }
 
+/// A resource pack kept alive across decoder requests, together with the key
+/// that produced it. The key is the custom pack's path and last-modified time
+/// (or `None` for the bundled vanilla pack), so the pack is rebuilt only when
+/// the user's selection actually changes.
+pub(crate) struct CachedPack {
+    key: Option<(PathBuf, Option<SystemTime>)>,
+    source: ResourcePackSource,
+}
+
 /// Decodes a schematic inside the isolated decoder process.
 ///
 /// The coordinator sends ordered chunks while native workers retain a bounded result
@@ -1012,7 +1041,8 @@ mod tests {
 pub(crate) fn decode(
     path: &Path,
     pack_path: &Path,
-    pack: &mut Option<ResourcePackSource>,
+    custom_pack_path: Option<&Path>,
+    pack: &mut Option<CachedPack>,
     options: PreviewOptions,
     replacements: &[BlockReplacement],
     stream: &mut (impl Read + Write),
@@ -1023,17 +1053,33 @@ pub(crate) fn decode(
         let mut last_progress = None;
         let current = || encoder.borrow_mut().checkpoint();
         let data = read_file(path, &current)?;
-        if pack.is_none() {
-            let bytes = read_file(pack_path, &current)?;
-            *pack = Some(
-                ResourcePackSource::from_bytes(&bytes)
+        let key = match custom_pack_path {
+            Some(custom) => {
+                let modified = std::fs::metadata(custom).ok().and_then(|m| m.modified().ok());
+                Some((custom.to_path_buf(), modified))
+            }
+            None => None,
+        };
+        // Rebuild only when the pack selection (path or mtime) changed; otherwise
+        // reuse the cached pack so repeated loads stay fast.
+        if pack.as_ref().map(|cached| &cached.key) != Some(&key) {
+            let vanilla = read_file(pack_path, &current)?;
+            let source = match &key {
+                Some((custom, _)) => {
+                    let custom_bytes = read_file(custom, &current)?;
+                    // Lowest priority first: vanilla provides base blockstates and
+                    // models, the custom pack overlays matching textures/models.
+                    ResourcePackSource::from_bytes_list([vanilla, custom_bytes])
+                        .map_err(|e| format!("无法加载材质包：{e}"))?
+                }
+                None => ResourcePackSource::from_bytes(&vanilla)
                     .map_err(|e| format!("随附的方块资源无效：{e}"))?,
-            );
+            };
+            *pack = Some(CachedPack { key, source });
         }
         litematica_preview_native::load_chunks(
             &data,
-            pack.as_ref()
-                .ok_or("随附的方块资源不可用。")?,
+            &pack.as_ref().ok_or("随附的方块资源不可用。")?.source,
             options,
             replacements,
             |preview| encoder.borrow_mut().chunk(preview),
@@ -1103,7 +1149,7 @@ pub(crate) fn export_to_file(
 }
 
 fn finish_catch_unwind(
-    pack: &mut Option<ResourcePackSource>,
+    pack: &mut Option<CachedPack>,
     result: std::thread::Result<Result<LoadedPreview, String>>,
 ) -> Result<LoadedPreview, String> {
     result.unwrap_or_else(|panic| {
