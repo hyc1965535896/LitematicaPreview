@@ -77,6 +77,31 @@ async fn choose_file(app: AppHandle, window: WebviewWindow) -> Result<Option<Str
     .map_err(|e| format!("无法显示文件选择器：{e}"))?
 }
 
+#[tauri::command]
+async fn choose_resource_pack(
+    app: AppHandle,
+    window: WebviewWindow,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_parent(&window)
+            .set_title("选择 Minecraft 材质包")
+            .add_filter("Minecraft 材质包", &["zip"])
+            .add_filter("所有文件", &["*"])
+            .blocking_pick_file()
+            .map(|file| {
+                let path = file
+                    .into_path()
+                    .map_err(|e| format!("无法打开所选材质包：{e}"))?;
+                resources::path_string(&path)
+            })
+            .transpose()
+    })
+    .await
+    .map_err(|e| format!("无法显示材质包选择器：{e}"))?
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PreviewProgress {
@@ -133,7 +158,7 @@ async fn load_preview(
     options: preview::LoadOptions,
     state: State<'_, HostState>,
 ) -> Result<protocol::Metadata, String> {
-    let (options, replacements) = options.validate()?;
+    let (options, replacements, resource_pack) = options.validate()?;
     let worker = Arc::clone(&state.worker);
     worker.advance(request_id);
     worker.ensure_current(request_id)?;
@@ -145,6 +170,7 @@ async fn load_preview(
         let metadata = worker.load(
             &path,
             &pack_path,
+            resource_pack.as_deref(),
             request_id,
             options,
             &replacements,
@@ -165,7 +191,7 @@ fn start_preview(
     options: preview::LoadOptions,
     state: State<'_, HostState>,
 ) -> Result<(), String> {
-    let (options, replacements) = options.validate()?;
+    let (options, replacements, resource_pack) = options.validate()?;
     if options.thread_count.is_none() {
         return Err("流式预览需要启用多线程。".into());
     }
@@ -181,6 +207,7 @@ fn start_preview(
             producer.load_stream(
                 &path,
                 &pack,
+                resource_pack.as_deref(),
                 request_id,
                 options,
                 &replacements,
@@ -534,6 +561,7 @@ fn run() -> Result<(), String> {
         .invoke_handler(tauri::generate_handler![
             bootstrap,
             choose_file,
+            choose_resource_pack,
             load_preview,
             start_preview,
             next_preview,
