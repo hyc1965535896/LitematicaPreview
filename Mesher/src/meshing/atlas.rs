@@ -24,10 +24,14 @@ pub(super) fn position_dependent(block: &InputBlock) -> bool {
 /// The input contains unique static states and actual dynamic/entity positions.
 /// Only one representative's geometry and temporary atlas are alive at a time;
 /// retained storage consists of unique tiles followed by the final shared atlas.
+///
+/// A sign-text sprite joins the atlas as one extra texture before packing, so
+/// the packer can place it anywhere without invalidating block UVs.
 pub(super) fn build<'a>(
     pack: &ResourcePack,
     config: &MesherConfig,
     blocks: impl Iterator<Item = (BlockPosition, &'a InputBlock)>,
+    text_sprite: Option<&TextureData>,
 ) -> Result<TextureAtlas, String> {
     // Discovery must not duplicate a potentially large prebuilt atlas.
     let discovery = MesherConfig {
@@ -48,6 +52,13 @@ pub(super) fn build<'a>(
     };
     let mut atlas = AtlasBuilder::new(config.atlas_max_size, config.atlas_padding);
     let mut discovered = HashSet::new();
+
+    // The sign-text sprite is a synthetic texture no block references; it is
+    // added first so `discovered` also keeps it out of the local-atlas paths.
+    if let Some(sprite) = text_sprite {
+        atlas.add_texture(crate::fonts::ATLAS_KEY.to_string(), sprite.clone());
+        discovered.insert(crate::fonts::ATLAS_KEY.to_string());
+    }
 
     // `MeshBuilder` provides the canonical missing-texture sentinel, which
     // differs from `TextureData::placeholder()` and is required for empty inputs.
@@ -183,6 +194,7 @@ mod tests {
             &pack,
             &config,
             positions.into_iter().map(|pos| (pos, &block)),
+            None,
         )
         .unwrap();
         assert!(atlas.contains("__missing__"));
