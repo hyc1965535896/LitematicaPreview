@@ -420,7 +420,7 @@ fn generated_texture_cannot_repack_an_already_shared_atlas() {
     let pack = test_pack();
     let block = InputBlock::new("minecraft:torch");
     let config = mesher_config(&MeshConfig::new().with_greedy_meshing(false));
-    let atlas = atlas::build(pack.pack(), &config, std::iter::empty()).unwrap();
+    let atlas = atlas::build(pack.pack(), &config, std::iter::empty(), None).unwrap();
     let position = BlockPosition::new(0, 0, 0);
     let palette = [block];
     let result = builder::mesh(
