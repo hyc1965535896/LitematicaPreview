@@ -11,6 +11,7 @@
     "core:window:allow-close",
     "allow-bootstrap",
     "allow-choose-file",
+    "allow-choose-resource-pack",
     "allow-load-preview",
     "allow-start-preview",
     "allow-next-preview",
