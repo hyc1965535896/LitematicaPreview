@@ -24,6 +24,7 @@ fn main() {
             .app_manifest(tauri_build::AppManifest::new().commands(&[
                 "bootstrap",
                 "choose_file",
+                "choose_resource_pack",
                 "load_preview",
                 "start_preview",
                 "next_preview",
