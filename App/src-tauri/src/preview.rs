@@ -25,10 +25,11 @@ pub struct LoadOptions {
     speed_first: bool,
     #[serde(default)]
     replacements: Vec<BlockReplacement>,
-    /// Absolute path to a user-selected Minecraft resource pack (.zip). Omitted
-    /// or null renders with the bundled vanilla textures only.
+    /// Absolute paths to user-selected Minecraft resource packs (.zip), in
+    /// Minecraft's own order: the first entry wins, later packs fill in what
+    /// earlier ones do not define.
     #[serde(default)]
-    resource_pack: Option<String>,
+    resource_packs: Vec<String>,
 }
 
 fn required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -42,7 +43,7 @@ where
 impl LoadOptions {
     pub fn validate(
         self,
-    ) -> Result<(PreviewOptions, Vec<BlockReplacement>, Option<PathBuf>), String> {
+    ) -> Result<(PreviewOptions, Vec<BlockReplacement>, Vec<PathBuf>), String> {
         let options = PreviewOptions {
             memory_limit_mb: self.memory_limit_mb,
             chunk_size: self.chunk_size,
@@ -51,17 +52,23 @@ impl LoadOptions {
         };
         options.validate()?;
         litematica_preview_native::validate_replacements(&self.replacements)?;
-        let resource_pack = match self.resource_pack {
-            Some(path) if !path.trim().is_empty() => {
-                let path = PathBuf::from(path);
-                if !path.is_file() {
-                    return Err("所选材质包不存在或不是文件，请重新选择。".into());
-                }
-                Some(path)
+        let mut resource_packs = Vec::new();
+        for path in self.resource_packs {
+            if path.trim().is_empty() {
+                continue;
             }
-            _ => None,
-        };
-        Ok((options, self.replacements, resource_pack))
+            let path = PathBuf::from(path);
+            if !path.is_file() {
+                return Err(format!(
+                    "所选材质包 {} 不存在或不是文件，请重新选择。",
+                    path.display()
+                ));
+            }
+            if !resource_packs.contains(&path) {
+                resource_packs.push(path);
+            }
+        }
+        Ok((options, self.replacements, resource_packs))
     }
 }
 
@@ -285,7 +292,7 @@ impl PreviewWorker {
         &self,
         path: &Path,
         pack_path: &Path,
-        custom_pack_path: Option<&Path>,
+        resource_packs: &[PathBuf],
         request_id: u64,
         options: PreviewOptions,
         replacements: &[BlockReplacement],
@@ -324,7 +331,7 @@ impl PreviewWorker {
                 .load_stream(
                     path,
                     pack_path,
-                    custom_pack_path,
+                    resource_packs,
                     options.chunk_size,
                     options.thread_count,
                     options.speed_first,
@@ -446,7 +453,7 @@ impl PreviewWorker {
         &self,
         path: &Path,
         pack_path: &Path,
-        custom_pack_path: Option<&Path>,
+        resource_packs: &[PathBuf],
         request_id: u64,
         options: PreviewOptions,
         replacements: &[BlockReplacement],
@@ -480,7 +487,7 @@ impl PreviewWorker {
             .load(
                 path,
                 pack_path,
-                custom_pack_path,
+                resource_packs,
                 options.chunk_size,
                 options.thread_count,
                 options.speed_first,
@@ -1026,12 +1033,68 @@ mod tests {
 }
 
 /// A resource pack kept alive across decoder requests, together with the key
-/// that produced it. The key is the custom pack's path and last-modified time
-/// (or `None` for the bundled vanilla pack), so the pack is rebuilt only when
-/// the user's selection actually changes.
+/// that produced it. The key is the ordered list of selected packs with their
+/// last-modified times (empty for the bundled vanilla pack only), so the pack
+/// is rebuilt only when the user's selection actually changes.
 pub(crate) struct CachedPack {
-    key: Option<(PathBuf, Option<SystemTime>)>,
+    key: String,
     source: ResourcePackSource,
+    /// Bitmap font providers of the bundled pack and the user's packs, in
+    /// resolution order. Parsed with the pack so both stay in step.
+    fonts: Vec<litematica_preview_native::BitmapProvider>,
+}
+
+/// Bitmap font providers for the same pack selection `layered_pack` loads.
+/// A pack that ships fonts reskins text; the bundled pack's own pages cover the
+/// rest, and anything neither holds falls back to the embedded unifont table.
+fn layered_fonts(pack_path: &Path, resource_packs: &[PathBuf]) -> Vec<litematica_preview_native::BitmapProvider> {
+    let mut fonts = Vec::new();
+    // The user's packs take precedence, in their own order.
+    for path in resource_packs.iter().rev() {
+        if let Ok(bytes) = std::fs::read(path) {
+            fonts.extend(litematica_preview_native::parse_font_providers(&bytes));
+        }
+    }
+    if let Ok(bytes) = std::fs::read(pack_path) {
+        fonts.extend(litematica_preview_native::parse_font_providers(&bytes));
+    }
+    fonts
+}
+
+/// Identity of a pack selection: paths plus modification times, so editing or
+/// replacing a pack on disk also invalidates the cache.
+fn pack_key(paths: &[PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|path| {
+            let modified = std::fs::metadata(path)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .map_or(0, |since| since.as_millis());
+            format!("{}@{modified}", path.display())
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The bundled pack plus the user's packs, in Minecraft's own order: the first
+/// selected pack wins, later ones fill in whatever earlier packs leave out, and
+/// the bundled vanilla pack supplies everything the user's packs do not define.
+fn layered_pack(pack_path: &Path, resource_packs: &[PathBuf]) -> Result<ResourcePackSource, String> {
+    // Applies lowest priority first, so the bundled pack comes first and the
+    // selection order is preserved: entry 1 outranks entry 2 and so on.
+    let mut sources = Vec::with_capacity(resource_packs.len() + 1);
+    sources.push(std::fs::read(pack_path).map_err(|e| format!("随附的方块资源无效：{e}"))?);
+    for path in resource_packs {
+        sources.push(
+            std::fs::read(path)
+                .map_err(|e| format!("无法读取材质包 {}：{e}", path.display()))?,
+        );
+    }
+    let layered = ResourcePackSource::from_bytes_list(sources)
+        .map_err(|e| format!("无法加载材质包：{e}"))?;
+    Ok(layered)
 }
 
 /// Decodes a schematic inside the isolated decoder process.
@@ -1041,7 +1104,7 @@ pub(crate) struct CachedPack {
 pub(crate) fn decode(
     path: &Path,
     pack_path: &Path,
-    custom_pack_path: Option<&Path>,
+    resource_packs: &[PathBuf],
     pack: &mut Option<CachedPack>,
     options: PreviewOptions,
     replacements: &[BlockReplacement],
@@ -1053,33 +1116,19 @@ pub(crate) fn decode(
         let mut last_progress = None;
         let current = || encoder.borrow_mut().checkpoint();
         let data = read_file(path, &current)?;
-        let key = match custom_pack_path {
-            Some(custom) => {
-                let modified = std::fs::metadata(custom).ok().and_then(|m| m.modified().ok());
-                Some((custom.to_path_buf(), modified))
-            }
-            None => None,
-        };
-        // Rebuild only when the pack selection (path or mtime) changed; otherwise
-        // reuse the cached pack so repeated loads stay fast.
-        if pack.as_ref().map(|cached| &cached.key) != Some(&key) {
-            let vanilla = read_file(pack_path, &current)?;
-            let source = match &key {
-                Some((custom, _)) => {
-                    let custom_bytes = read_file(custom, &current)?;
-                    // Lowest priority first: vanilla provides base blockstates and
-                    // models, the custom pack overlays matching textures/models.
-                    ResourcePackSource::from_bytes_list([vanilla, custom_bytes])
-                        .map_err(|e| format!("无法加载材质包：{e}"))?
-                }
-                None => ResourcePackSource::from_bytes(&vanilla)
-                    .map_err(|e| format!("随附的方块资源无效：{e}"))?,
-            };
-            *pack = Some(CachedPack { key, source });
+        // Rebuild only when the selection (paths or their mtimes) changed;
+        // otherwise reuse the cached pack so repeated loads stay fast.
+        let key = pack_key(resource_packs);
+        if pack.as_ref().map(|cached| cached.key.as_str()) != Some(key.as_str()) {
+            let source = layered_pack(pack_path, resource_packs)?;
+            let fonts = layered_fonts(pack_path, resource_packs);
+            *pack = Some(CachedPack { key, source, fonts });
         }
-        litematica_preview_native::load_chunks(
+        let cached = pack.as_ref().ok_or("随附的方块资源不可用。")?;
+        litematica_preview_native::load_chunks_with_fonts(
             &data,
-            &pack.as_ref().ok_or("随附的方块资源不可用。")?.source,
+            &cached.source,
+            &cached.fonts,
             options,
             replacements,
             |preview| encoder.borrow_mut().chunk(preview),
