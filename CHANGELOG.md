@@ -3,6 +3,7 @@
 ## Features
 
 - Add a "渲染材质包" setting so the preview can render with Minecraft resource packs: add any number of pack `.zip` files and they layer on top of the bundled vanilla assets in Minecraft's own order (a later pack overrides an earlier one, and each fills in whatever the packs above it leave out), so packs that only ship textures — or only one model detail — still work. Adding, removing or reordering a pack re-renders the schematic that is already open. Supports block textures and models; shaders, connected textures (CTM) and custom model loaders are not applied, and blocks no pack covers keep their vanilla textures.
+- Render sign text. Signs carry their text in block entities, which the preview previously ignored, so every sign showed an empty board. Both text faces are read, in both the modern (`front_text`/`back_text` messages) and legacy (`Text1`..`Text4`) layouts, with the dye colour and `§` formatting codes applied, and the text is written on the face of the board the mesher actually produced, following the sign's rotation. Glyphs come from the loaded packs' own font pages when they ship any, otherwise from an embedded copy of the same GNU Unifont the vanilla client uses, so Chinese, Japanese and Korean signs render instead of showing boxes. The font table adds about 0.7 MB to the download.
 
 # v0.3.1
 
