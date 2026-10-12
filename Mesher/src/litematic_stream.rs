@@ -18,7 +18,7 @@ const BUFFER_SIZE: usize = 64 * 1024;
 const CHECKPOINT_BYTES: usize = 4 * 1024 * 1024;
 
 type Position = (i32, i32, i32);
-type Tiles = Result<HashSet<Position>, String>;
+type Tiles = Result<Vec<(Position, Option<crate::signs::SignText>)>, String>;
 
 #[derive(Clone, Copy)]
 struct PackedSpan {
@@ -44,7 +44,7 @@ impl Default for RegionFields {
             packed: None,
             entities: Vec::new(),
             entity_count: 0,
-            tiles: Ok(HashSet::new()),
+            tiles: Ok(Vec::new()),
             tile_count: 0,
         }
     }
@@ -65,6 +65,11 @@ struct PreparedRegion {
     packed: PackedSpan,
     palette: Vec<BlockState>,
     mapping: Vec<PaletteEntry>,
+    /// Sign text keyed by the tile NBT position, i.e. absolute position minus
+    /// the region origin, which is how the file writes those coordinates.
+    signs: HashMap<Position, crate::signs::SignText>,
+    /// The region origin the tile coordinates are relative to.
+    origin: Position,
 }
 
 struct Input<'a, F> {
@@ -182,6 +187,8 @@ enum Keep {
     Rotation,
     Pose,
     Armor,
+    TileSide,
+    TextList,
 }
 
 impl Keep {
@@ -214,6 +221,19 @@ impl Keep {
             Self::Tile => match name {
                 "Pos" => Self::TilePosition,
                 "x" | "y" | "z" => Self::SmallInt,
+                // Sign text is the only tile payload the preview renders, so
+                // it is the only one worth retaining.
+                "id" | "Id" => Self::String,
+                "front_text" | "back_text" => Self::TileSide,
+                "Text1" | "Text2" | "Text3" | "Text4" => Self::String,
+                "Color" => Self::Int,
+                "GlowingText" => Self::Byte,
+                _ => Self::None,
+            },
+            Self::TileSide => match name {
+                "messages" => Self::TextList,
+                "color" => Self::String,
+                "has_glowing_text" => Self::Byte,
                 _ => Self::None,
             },
             _ => Self::None,
@@ -359,6 +379,8 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
                     Keep::Rotation if child == 5 => count.min(1),
                     Keep::Pose if child == 5 => count,
                     Keep::Armor if child == 10 => count.min(4),
+                    // Sign messages are four JSON strings.
+                    Keep::TextList if child == 8 => count,
                     _ => 0,
                 };
                 let mut values = Vec::new();
@@ -370,6 +392,9 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
                         } else {
                             NbtTag::Double(f64::from_be_bytes(self.input.number()?))
                         })
+                    } else if index < take && child == 8 {
+                        self.node(depth + 1)?;
+                        self.string(true)?.map(NbtTag::String)
                     } else {
                         self.payload(
                             child,
@@ -394,6 +419,7 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
                         | Keep::EntityData
                         | Keep::Item
                         | Keep::Tile
+                        | Keep::TileSide
                 );
                 let mut compound = NbtCompound::new();
                 let mut count = 0;
@@ -461,7 +487,7 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
         let (child, count) = self.list()?;
         if tiles {
             fields.tile_count = count;
-            fields.tiles = Ok(HashSet::new());
+            fields.tiles = Ok(Vec::new());
         } else {
             fields.entity_count = count;
             fields.entities.clear();
@@ -475,12 +501,15 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
             if let Some(NbtTag::Compound(entity)) = value {
                 if tiles {
                     let position = super::block_entity_position(&entity);
+                    // Sign text is read here, where the NBT is still in hand;
+                    // everything else a tile holds is ignored like before.
+                    let text = crate::signs::read_quartz(&entity);
                     match (&mut fields.tiles, position) {
-                        (Ok(positions), Ok(position)) => {
-                            positions
+                        (Ok(tiles), Ok(position)) => {
+                            tiles
                                 .try_reserve(1)
                                 .map_err(|error| error.to_string())?;
-                            positions.insert(position);
+                            tiles.push((position, text));
                         }
                         (result @ Ok(_), Err(error)) => *result = Err(error),
                         _ => {}
@@ -500,7 +529,7 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
     fn region(&mut self, depth: usize) -> Result<RegionFields, String> {
         self.node(depth)?;
         let mut fields = RegionFields {
-            tiles: Ok(HashSet::new()),
+            tiles: Ok(Vec::new()),
             ..RegionFields::default()
         };
         let mut count = 0;
@@ -536,7 +565,7 @@ impl<'a, F: Fn() -> Result<(), String>> Scan<'a, F> {
                             fields.entity_count = 0;
                         }
                         "TileEntities" => {
-                            fields.tiles = Ok(HashSet::new());
+                            fields.tiles = Ok(Vec::new());
                             fields.tile_count = 0;
                         }
                         _ => {}
@@ -757,11 +786,25 @@ fn prepare(
             builder.push_entity(&entity)?;
         }
         let tiles = fields.tiles?;
-        for &position in &tiles {
+        // The block-entity count de-duplicates positions, as it always has;
+        // sign text rides alongside for the tiles that carry it.
+        let mut positions = HashSet::new();
+        let mut signs = HashMap::new();
+        for (position, text) in tiles {
             current()?;
-            super::offset_position(position, min)?;
+            // Tile NBT coordinates are relative to the region origin, which is
+            // not always the same corner the packed block indices use, so the
+            // keys stay raw and the block loop subtracts the origin instead.
+            positions.try_reserve(1).map_err(|error| error.to_string())?;
+            positions.insert(position);
+            if let Some(text) = text {
+                if !text.is_empty() {
+                    signs.try_reserve(1).map_err(|error| error.to_string())?;
+                    signs.insert(position, text);
+                }
+            }
         }
-        builder.add_block_entities(tiles.len())?;
+        builder.add_block_entities(positions.len())?;
         prepared.try_reserve(1).map_err(|error| error.to_string())?;
         prepared.push(PreparedRegion {
             min,
@@ -775,6 +818,8 @@ fn prepare(
             packed,
             palette,
             mapping,
+            signs,
+            origin,
         });
     }
     if total_volume > limits.max_volume || region_count > limits.max_regions {
@@ -823,8 +868,29 @@ fn visit<F: Fn() -> Result<(), String>>(
             region.min.2 + ((index / region.width) % region.length) as i32,
         );
         builder.push_block(position, &region.mapping[palette_index])?;
+        attach_sign(region, position, state, builder)?;
     }
     Ok(())
+}
+
+/// Queues one sign's text once its block is placed, so the mesh window that
+/// owns the voxel emits the quads.
+fn attach_sign(
+    region: &PreparedRegion,
+    position: BlockPosition,
+    state: &BlockState,
+    builder: &mut CompactBlocksBuilder,
+) -> Result<(), String> {
+    let key = (
+        position.x - region.origin.0,
+        position.y - region.origin.1,
+        position.z - region.origin.2,
+    );
+    let Some(text) = region.signs.get(&key) else {
+        return Ok(());
+    };
+    let yaw = crate::signs::state_yaw(state);
+    builder.push_sign(position, yaw, text.clone())
 }
 
 fn visit_parallel<F: Fn() -> Result<(), String>>(
@@ -893,6 +959,7 @@ fn visit_parallel<F: Fn() -> Result<(), String>>(
         |blocks| {
             for (position, palette_index) in blocks {
                 builder.push_block(position, &region.mapping[palette_index as usize])?;
+                attach_sign(region, position, &region.palette[palette_index as usize], builder)?;
             }
             Ok(())
         },
