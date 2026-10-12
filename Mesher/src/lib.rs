@@ -8,17 +8,27 @@ mod containers;
 mod decode;
 mod dv_map;
 mod export;
+mod font_defs;
+mod fonts;
 mod icons;
 mod item_names_zh;
 mod materials_xlsx;
 mod meshing;
 mod parallel;
 mod replace;
+mod signs;
 pub use decode::{decode, DecodeFailure};
 pub use export::{export_schematic, ExportFormat};
+pub use font_defs::BitmapProvider;
 pub use icons::{block_icons, BlockIcon};
 pub use materials_xlsx::{export_materials_xlsx, MaterialsExport};
 pub use replace::{apply_replacements, validate_replacements, BlockReplacement, MAX_REPLACEMENTS};
+
+/// Bitmap font providers declared by a resource pack, in resolution order, so
+/// sign text can use a pack's own font pages. A pack without fonts yields none.
+pub fn parse_font_providers(archive: &[u8]) -> Vec<BitmapProvider> {
+    font_defs::parse(archive)
+}
 
 /// One distinct block state in the loaded schematic with its voxel count.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
@@ -153,6 +163,23 @@ pub fn load_chunks(
     pack: &ResourcePackSource,
     options: PreviewOptions,
     replacements: &[BlockReplacement],
+    consume: impl FnMut(Preview) -> Result<(), String>,
+    on_progress: impl FnMut(usize, usize) -> Result<(), String>,
+    current: impl Fn() -> Result<(), String>,
+) -> Result<LoadedPreview, String> {
+    let none: &[font_defs::BitmapProvider] = &[];
+    load_chunks_with_fonts(data, pack, none, options, replacements, consume, on_progress, current)
+}
+
+/// [`load_chunks`] with the loaded packs' bitmap font providers, so sign text
+/// uses the same pages a pack-provided font would. Passing none still renders
+/// sign text from the embedded unifont table.
+pub fn load_chunks_with_fonts(
+    data: &[u8],
+    pack: &ResourcePackSource,
+    font_providers: &[font_defs::BitmapProvider],
+    options: PreviewOptions,
+    replacements: &[BlockReplacement],
     mut consume: impl FnMut(Preview) -> Result<(), String>,
     mut on_progress: impl FnMut(usize, usize) -> Result<(), String>,
     current: impl Fn() -> Result<(), String>,
@@ -164,7 +191,7 @@ pub fn load_chunks(
         return Err("请选择非空的投影文件。".into());
     }
     let chunk_size = options.chunk_size.map(i32::from);
-    let (source, replaced) = decode::decode_preview(
+    let (mut source, replaced) = decode::decode_preview(
         data,
         chunk_size,
         options.thread_count,
@@ -172,6 +199,7 @@ pub fn load_chunks(
         replacements,
         &current,
     )?;
+    source.set_font_providers(font_providers.to_vec());
     current()?;
     let materials = source.materials();
     let block_count = source.block_count();
