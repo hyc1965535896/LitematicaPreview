@@ -117,7 +117,51 @@ fn a_custom_pack_overrides_the_bundled_texture_and_leaves_missing_ones_vanilla()
 }
 
 #[test]
+fn several_packs_layer_in_minecraft_order_with_the_last_winning() {
+    // Mirrors the decoder: the bundled pack is the base, then the user's
+    // selection is applied in order, so a later pack overrides an earlier one —
+    // the same relative priority the resource-pack screen shows.
+    let blue = [0, 0, 255, 255];
+    let green = [0, 255, 0, 255];
+    let vanilla_bytes = bundled_pack();
+
+    let last_wins = ResourcePackSource::from_bytes_list([
+        vanilla_bytes.clone(),
+        overlay_pack("block/stone", MAGENTA),
+        overlay_pack("block/stone", blue),
+    ])
+    .expect("layer two packs that both define stone");
+    let pixels = stone_preview(&last_wins);
+    assert!(has_color(&pixels, blue), "the later pack must win the conflict");
+    assert!(
+        !has_color(&pixels, MAGENTA),
+        "the overridden pack's texture must not appear anywhere in the atlas"
+    );
+
+    // Reversing the selection reverses the winner.
+    let other_wins = ResourcePackSource::from_bytes_list([
+        vanilla_bytes,
+        overlay_pack("block/stone", blue),
+        overlay_pack("block/stone", MAGENTA),
+    ])
+    .expect("layer the same two packs in the other order");
+    assert!(has_color(&stone_preview(&other_wins), MAGENTA));
+
+    // Disjoint packs combine: stone from one, dirt from the other, both visible.
+    let combined = ResourcePackSource::from_bytes_list([
+        bundled_pack(),
+        overlay_pack("block/stone", MAGENTA),
+        overlay_pack("block/dirt", green),
+    ])
+    .expect("layer packs that cover different blocks");
+    assert!(has_color(&stone_preview(&combined), MAGENTA));
+    let dirt = preview_pixels(&combined, &schematic(&[(0, 0, 0, "minecraft:dirt")]));
+    assert!(has_color(&dirt, green), "the second pack's dirt texture must apply");
+}
+
+#[test]
 fn an_unrelated_overlay_leaves_other_blocks_untouched() {
+
     // Real packs rarely ship blockstates or models, so the blocks they do not
     // mention must keep meshing from vanilla's definitions and textures.
     let vanilla_bytes = bundled_pack();
