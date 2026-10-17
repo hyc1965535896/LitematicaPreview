@@ -527,6 +527,9 @@ export class SchematicRenderer {
           guard()
           validateUpload(buffer, page)
         }
+        // A page never exceeds UPLOAD_CHUNK bytes, so a single budgeted yield per
+        // page keeps the window responsive without a round trip per slice.
+        let pageBytes = 0
         for (const slice of page.slices) {
           guard()
           const target = slice.target
@@ -549,7 +552,6 @@ export class SchematicRenderer {
               gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
               gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE)
               this.checkGraphics("allocate a block texture")
-              await this.checkpoint(budget, 0, guard)
             }
             const pixels = new Uint8Array(buffer, slice.pageOffset, slice.length)
             gl.activeTexture(gl.TEXTURE0)
@@ -586,7 +588,6 @@ export class SchematicRenderer {
                   gl.STATIC_DRAW,
                 )
                 this.checkGraphics("allocate a mesh buffer")
-                await this.checkpoint(budget, 0, guard)
               }
             }
             let part = model.parts[model.parts.length - 1]
@@ -633,8 +634,9 @@ export class SchematicRenderer {
             this.checkGraphics("upload a mesh buffer")
           }
           reportUploaded(slice.length)
-          await this.checkpoint(budget, slice.length, guard)
+          pageBytes += slice.length
         }
+        await this.checkpoint(budget, pageBytes, guard)
         preparation?.release()
       }
       guard()
@@ -761,8 +763,9 @@ export class SchematicRenderer {
         gl.SAMPLES,
       ) as Int32Array
       this.samples = 1
+      const supportedSamples = new Set(depthSamples)
       for (const count of colorSamples) {
-        if (count <= 4 && count > this.samples && depthSamples.includes(count)) this.samples = count
+        if (count <= 4 && count > this.samples && supportedSamples.has(count)) this.samples = count
       }
       this.checkGraphics("初始化 WebGL 2")
       this.pipeline = pipeline
