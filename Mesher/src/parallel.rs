@@ -178,6 +178,55 @@ pub(crate) fn ordered<T: Send, R: Send>(
     })
 }
 
+/// Applies `task` to every item over as many threads as the machine allows,
+/// each carrying its own freshly initialized state, and returns results in input
+/// order. For short, pure per-item work over a shared read-only input where a
+/// per-item construction would repeat one pack-wide lookup table — the atlas
+/// phase's per-palette-state verdicts are the whole caller set. Small inputs run
+/// inline, where thread startup would dominate the work.
+pub(crate) fn shard_map<T: Sync, S, R: Send>(
+    items: &[T],
+    init: impl Fn() -> S + Sync,
+    task: impl Fn(&mut S, &T) -> R + Sync,
+) -> Result<Vec<R>, String> {
+    const INLINE_LIMIT: usize = 512;
+    let cap = crate::max_worker_threads() as usize;
+    let shards = cap.min(items.len());
+    if shards <= 1 || items.len() < INLINE_LIMIT {
+        let mut state = init();
+        return Ok(items.iter().map(|item| task(&mut state, item)).collect());
+    }
+    let width = items.len().div_ceil(shards);
+    // Handles are pushed in shard order, so joining in order and flattening
+    // keeps the output deterministic regardless of which thread finishes first.
+    std::thread::scope(|scope| {
+        let init = &init;
+        let task = &task;
+        let mut handles = Vec::with_capacity(shards);
+        for shard in items.chunks(width) {
+            let handle = std::thread::Builder::new()
+                .name("preview-compute".into())
+                .spawn_scoped(scope, move || {
+                    let mut state = init();
+                    shard
+                        .iter()
+                        .map(|item| task(&mut state, item))
+                        .collect::<Vec<R>>()
+                })
+                .map_err(|error| format!("无法启动并行工作线程：{error}"))?;
+            handles.push(handle);
+        }
+        let mut output = Vec::with_capacity(items.len());
+        for handle in handles {
+            let shard_results = handle
+                .join()
+                .map_err(|_| "并行工作线程发生内部错误。".to_string())?;
+            output.extend(shard_results);
+        }
+        Ok(output)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
