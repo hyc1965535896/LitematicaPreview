@@ -1,5 +1,12 @@
 # v0.3.2
 
+## Synced from upstream
+
+- Turn chests the right way round: `facing=east` and `facing=west` chests rendered mirrored, which put a chest's latch on the far face and a double chest's two half-latches at the outer corners (upstream core fix).
+- Mount item frames from their `Facing` byte instead of their `Rotation` yaw, so floor and ceiling frames no longer report a wall direction and the ones on north/south walls no longer hang one block off their wall; `ItemRotation` is read too.
+- Analyze palette states in parallel when building the atlas, and resolve each model inheritance chain once per build instead of once per palette state (upstream core perf change; noticeably faster on large schematics).
+- Yield the render loop once per upload page instead of once per GPU allocation, so uploading a large model no longer spends its time on scheduling round trips.
+
 ## Features
 
 - Add a "渲染材质包" setting so the preview can render with Minecraft resource packs: add any number of pack `.zip` files and they layer on top of the bundled vanilla assets in Minecraft's own order (a later pack overrides an earlier one, and each fills in whatever the packs above it leave out), so packs that only ship textures — or only one model detail — still work. Adding, removing or reordering a pack re-renders the schematic that is already open. Supports block textures and models; shaders, connected textures (CTM) and custom model loaders are not applied, and blocks no pack covers keep their vanilla textures.
