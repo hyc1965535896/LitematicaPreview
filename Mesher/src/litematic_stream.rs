@@ -210,7 +210,8 @@ impl Keep {
             Self::EntityData => match name {
                 "Rotation" => Self::Rotation,
                 "Item" => Self::Item,
-                "IsBaby" | "Color" => Self::Byte,
+                // Item frames carry their mount as Facing/ItemRotation bytes.
+                "IsBaby" | "Color" | "Facing" | "ItemRotation" => Self::Byte,
                 "Age" => Self::Int,
                 "RightArmPose" | "LeftArmPose" | "RightLegPose" | "LeftLegPose" | "HeadPose"
                 | "BodyPose" => Self::Pose,
