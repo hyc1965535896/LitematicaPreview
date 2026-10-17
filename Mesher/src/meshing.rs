@@ -531,11 +531,18 @@ impl<'a> ChunkMeshes<'a> {
             Some(sheet) => signs_glue::resolve(&atlas, sheet),
             None => HashMap::new(),
         };
-        let atlas_only = source
-            .palette
-            .iter()
-            .map(|block| config.greedy_meshing && builder::atlas_only(pack.pack(), block))
-            .collect();
+        // Per-palette-state verdicts are independent lookups over the same shared
+        // pack, so they shard cleanly; each worker rebuilds one `ModelResolver`,
+        // whose inheritance cache stays warm for its shard.
+        let atlas_only: Vec<bool> = if config.greedy_meshing {
+            crate::parallel::shard_map(
+                &source.palette,
+                || schematic_mesher::resolver::ModelResolver::new(pack.pack()),
+                |resolver, block| builder::atlas_only(pack.pack(), resolver, block),
+            )?
+        } else {
+            vec![false; source.palette.len()]
+        };
         current()?;
         Ok(Self {
             source,
@@ -700,6 +707,22 @@ fn block_state_to_input_block(state: &BlockState) -> InputBlock {
     for (key, value) in &state.properties {
         input.properties.insert(key.to_string(), value.to_string());
     }
+    // schematic-mesher 0.2.0 turns `facing=east` and `facing=west` chests the
+    // wrong way round, so the lid latch sits on the far face and a double chest
+    // puts both half-latches at the outer corners. Chest block states carry no
+    // facing-dependent model, so a mirrored `facing` repairs the block entity
+    // alone. Remove once the mesher fixes its chest rotation.
+    let name = state.name.strip_prefix("minecraft:").unwrap_or(&state.name);
+    if matches!(name, "chest" | "trapped_chest" | "ender_chest") {
+        let mirrored = match input.properties.get("facing").map(String::as_str) {
+            Some("east") => Some("west"),
+            Some("west") => Some("east"),
+            _ => None,
+        };
+        if let Some(facing) = mirrored {
+            input.properties.insert("facing".into(), facing.into());
+        }
+    }
     input
 }
 
@@ -717,11 +740,31 @@ fn entity_to_input_block(entity: &Entity) -> InputBlock {
         id => id,
     };
     let mut input = InputBlock::new(format!("entity:{mesher_id}"));
-    if let Some(NbtValue::List(rotation)) = entity.nbt.get("Rotation") {
-        if let Some(NbtValue::Float(yaw)) = rotation.first() {
+    // Item frames store their mount direction as a `Facing` byte, not as a
+    // `Rotation` yaw: a floor or ceiling frame keeps yaw 0, so the yaw alone
+    // would report a wall direction. `Rotation` stays the fallback for the
+    // frames that carry no `Facing`.
+    let item_frame = matches!(mesher_id, "item_frame" | "glow_item_frame");
+    if item_frame {
+        if let Some(NbtValue::Byte(facing)) = entity.nbt.get("Facing") {
             input
                 .properties
-                .insert("facing".into(), yaw_to_facing(*yaw).into());
+                .insert("facing".into(), frame_facing(*facing).into());
+        }
+        if let Some(NbtValue::Byte(rotation)) = entity.nbt.get("ItemRotation") {
+            input.properties.insert(
+                "item_rotation".into(),
+                (*rotation as u8 & 7).to_string(),
+            );
+        }
+    }
+    if !input.properties.contains_key("facing") {
+        if let Some(NbtValue::List(rotation)) = entity.nbt.get("Rotation") {
+            if let Some(NbtValue::Float(yaw)) = rotation.first() {
+                input
+                    .properties
+                    .insert("facing".into(), yaw_to_facing(*yaw).into());
+            }
         }
     }
     if let Some(NbtValue::Compound(item)) = entity.nbt.get("Item") {
@@ -788,6 +831,22 @@ fn yaw_to_facing(yaw: f32) -> &'static str {
         "north"
     } else {
         "east"
+    }
+}
+
+/// Item frame `Facing` byte: 0 down, 1 up, 2 north, 3 south, 4 west, 5 east.
+/// schematic-mesher 0.2.0 mounts a `north` or a `south` frame on the opposite
+/// block boundary, so the frame hangs one block face away from its wall; the two
+/// labels are swapped here to correct the mount.
+fn frame_facing(facing: i8) -> &'static str {
+    match facing {
+        0 => "down",
+        1 => "up",
+        2 => "south",
+        3 => "north",
+        4 => "west",
+        5 => "east",
+        _ => "south",
     }
 }
 
