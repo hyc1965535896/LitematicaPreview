@@ -67,6 +67,8 @@ type ExportOutcome = {
   blockCount: number
   /** Distinct item ids inside containers; 0 for non-material exports. */
   containerItemCount: number
+  /** Regions whose absolute origin the export rewrote to a relative one. */
+  repairedRegions: number
 }
 
 // Icons render once per app run in the Rust host; keep them across dialog opens.
@@ -724,7 +726,7 @@ export default function App({ initialError }: { initialError?: string }) {
       })
       setNotice({
         intent: "success",
-        message: `已导出 ${fileName(outcome.destination)}（${numbers.format(outcome.blockCount)} 个方块，替换了 ${numbers.format(outcome.replaced)} 个）。`,
+        message: `已导出 ${fileName(outcome.destination)}（${numbers.format(outcome.blockCount)} 个方块，替换了 ${numbers.format(outcome.replaced)} 个）${outcome.repairedRegions > 0 ? `，已把 ${outcome.repairedRegions} 个区域的绝对坐标改成相对坐标` : ""}。`,
       })
     } catch (error) {
       if (errorMessage(error) !== "Cancelled")
