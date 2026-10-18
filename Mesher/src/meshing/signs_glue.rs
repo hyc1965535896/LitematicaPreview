@@ -49,7 +49,7 @@ pub(super) fn append_text(
         };
         // Font pixels: a sign's text is drawn at 1/96 block per pixel, and
         // four 10px lines must fit the board's face.
-        let height = board.half[1] * 2.0;
+        let height = board.half_height * 2.0;
         let px = (height * 0.9 / 40.0).min(0.010_416_667 * 1.2);
         for (side, mirrored) in [(&sign.text.front, false), (&sign.text.back, true)] {
             let Some(side) = side else {
@@ -62,42 +62,81 @@ pub(super) fn append_text(
     }
 }
 
-/// Where one sign's text goes: the block's own centre for the horizontal axes,
-/// the board's height above it, and the face the mesher actually emitted for the
-/// depth. The sign model keeps its board in the upper half of the block — the
-/// post fills the rest — so the text is centred on that board, and four 10px
-/// lines are sized to fit roughly half a block.
+/// Where one sign's text goes, measured from the geometry the mesher emitted for
+/// that block. The sign model is an approximation: a wall sign's board is a thin
+/// slab flush with the block edge, a standing sign's board sits above its post.
+/// The thin axis is the board's normal, its outer face is the plane to write on,
+/// and the board's own vertical band (the wide part, not the post) centres the
+/// text.
 fn board_box(mesh: &MeshOutput, position: BlockPosition) -> Option<Board> {
-    // The board's depth comes from the geometry: the mesher's sign model is an
-    // approximation, so the text is written just outside whatever face exists.
-    let mut half_depth = 0.0f32;
-    let mut found = false;
+    let center = [position.x as f32, position.y as f32, position.z as f32];
     let layers = std::iter::once(&mesh.opaque)
         .chain(mesh.greedy_materials.iter().map(|material| &material.opaque));
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    let mut found = false;
     for layer in layers {
         for vertex in &layer.positions {
-            let inside_xz = (vertex[0] - position.x as f32).abs() <= 0.5 + 1e-3
-                && (vertex[2] - position.z as f32).abs() <= 0.5 + 1e-3
-                && (vertex[1] - position.y as f32).abs() <= 0.5 + 1e-3;
-            if !inside_xz {
+            if (vertex[0] - center[0]).abs() > 0.5 + 1e-3
+                || (vertex[1] - center[1]).abs() > 0.5 + 1e-3
+                || (vertex[2] - center[2]).abs() > 0.5 + 1e-3
+            {
                 continue;
             }
             found = true;
-            half_depth = half_depth.max((vertex[2] - position.z as f32).abs());
+            for axis in 0..3 {
+                min[axis] = min[axis].min(vertex[axis]);
+                max[axis] = max[axis].max(vertex[axis]);
+            }
         }
     }
     if !found {
         return None;
     }
+    // The board is thin along its normal and wide across it.
+    let normal_axis = if max[0] - min[0] <= max[2] - min[2] {
+        0
+    } else {
+        2
+    };
+    let perp = 2 - normal_axis;
+    let perp_center = (min[perp] + max[perp]) / 2.0;
+    // A standing sign's post is narrow; only the wide part is text-bearing.
+    let mut board_low = f32::INFINITY;
+    let mut board_high = f32::NEG_INFINITY;
+    let layers = std::iter::once(&mesh.opaque)
+        .chain(mesh.greedy_materials.iter().map(|material| &material.opaque));
+    for layer in layers {
+        for vertex in &layer.positions {
+            if (vertex[0] - center[0]).abs() > 0.5 + 1e-3
+                || (vertex[1] - center[1]).abs() > 0.5 + 1e-3
+                || (vertex[2] - center[2]).abs() > 0.5 + 1e-3
+            {
+                continue;
+            }
+            if (vertex[perp] - perp_center).abs() < 0.3 {
+                continue;
+            }
+            board_low = board_low.min(vertex[1]);
+            board_high = board_high.max(vertex[1]);
+        }
+    }
+    // A board with no wide vertices (a degenerate model) falls back to the box.
+    let (board_low, board_high) = if board_low.is_finite() && board_high > board_low {
+        (board_low, board_high)
+    } else {
+        (min[1], max[1])
+    };
     Some(Board {
         center: [
-            position.x as f32,
-            // The board sits above the block's middle; its centre is about a
-            // third of a block up, which is where vanilla centres sign text.
-            position.y as f32 + 1.0 / 3.0,
-            position.z as f32,
+            center[0],
+            (board_low + board_high) / 2.0,
+            center[2],
         ],
-        half: [0.5, 0.25, half_depth],
+        normal_axis,
+        low: min[normal_axis],
+        high: max[normal_axis],
+        half_height: ((board_high - board_low) / 2.0).max(0.05),
     })
 }
 
