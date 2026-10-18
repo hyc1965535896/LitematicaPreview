@@ -60,7 +60,9 @@ impl SignText {
 }
 
 /// Quarter turns the sign's front faces, from a block state's `rotation`
-/// (standing signs, 0-15) or `facing` (wall and hanging signs).
+/// (standing signs, 0-15) or `facing` (wall and hanging signs). 0 means the
+/// text reads from the south side (`+Z`), then clockwise: 1 east, 2 north,
+/// 3 west.
 pub(crate) fn state_yaw(state: &nucleation::BlockState) -> u8 {
     let property = |key: &str| {
         state
@@ -70,13 +72,21 @@ pub(crate) fn state_yaw(state: &nucleation::BlockState) -> u8 {
             .map(|(_, value)| value.as_str())
     };
     if let Some(rotation) = property("rotation").and_then(|value| value.parse::<u8>().ok()) {
-        return ((rotation as u32 % 16) / 4) as u8;
+        // A standing sign's `rotation` runs counter-clockwise from south:
+        // 0 = south, 4 = west, 8 = north, 12 = east.
+        return match (rotation as u32 % 16) / 4 {
+            1 => 3,
+            2 => 2,
+            3 => 1,
+            _ => 0,
+        };
     }
+    // Wall and hanging signs store the direction the sign faces outright.
     match property("facing") {
         Some("east") => 1,
-        Some("south") => 2,
+        Some("north") => 2,
         Some("west") => 3,
-        // North and anything unexpected keep the default facing.
+        // South and anything unexpected take the default facing.
         _ => 0,
     }
 }
@@ -276,12 +286,21 @@ struct GlyphRun {
 }
 
 /// Where a sign's board sits in the mesh, so text lands on its face rather than
-/// on a guessed plane. The mesher's sign model is an approximation, so the
-/// bounds come from the geometry actually emitted for that block.
+/// on a guessed plane. The mesher's sign model is an approximation — a wall
+/// sign's board is a thin slab at the block edge, a standing sign's sits above
+/// its post — so the bounds come from the geometry emitted for that block.
 #[derive(Clone, Copy)]
 pub(crate) struct Board {
+    /// Text anchor: the block's centre horizontally, the board's centre
+    /// vertically.
     pub center: [f32; 3],
-    pub half: [f32; 3],
+    /// Axis the board is thin along: 0 (x) or 2 (z).
+    pub normal_axis: usize,
+    /// Extent along `normal_axis`.
+    pub low: f32,
+    pub high: f32,
+    /// Board half-height, used to size the text.
+    pub half_height: f32,
 }
 
 /// Lays out every line of a side and emits its quads, positioned on the board's
@@ -304,11 +323,28 @@ pub(super) fn quads(
     if lines.is_empty() {
         return quads;
     }
-    // Unit vectors of the board's own frame: `right` runs along the reader's
-    // right, `out` points out of the face the text is written on.
-    let (right, out) = board_frame(yaw, mirrored);
-    let face = board.half[0] * out[0].abs() + board.half[2] * out[2].abs();
-    let plane = face + 0.005;
+    // The reader's right runs along the board's wide axis; the front face is the
+    // one the sign faces, and the back side is its opposite.
+    let perp = 2 - board.normal_axis;
+    let front_positive = match yaw % 4 {
+        0 => true,  // +Z
+        1 => true,  // +X
+        2 => false, // -Z
+        _ => false, // -X
+    };
+    let front_positive = front_positive != mirrored;
+    let plane = if front_positive {
+        board.high + 0.005
+    } else {
+        board.low - 0.005
+    };
+    let right_sign = if board.normal_axis == 2 {
+        if front_positive { 1.0 } else { -1.0 }
+    } else if front_positive {
+        -1.0
+    } else {
+        1.0
+    };
     let line_height = 10.0_f32;
     let centre_y = (lines.len() as f32 - 1.0) * line_height / 2.0;
     for (index, line) in lines.iter().enumerate() {
@@ -338,11 +374,11 @@ pub(super) fn quads(
             let mut uv = [[0.0f32; 2]; 4];
             for (corner, (point, texture)) in corners.iter().enumerate() {
                 let [x, y] = *point;
-                positions[corner] = [
-                    board.center[0] + right[0] * x * px + out[0] * plane,
-                    board.center[1] + y * px,
-                    board.center[2] + right[2] * x * px + out[2] * plane,
-                ];
+                let mut position = [0.0f32; 3];
+                position[perp] = board.center[perp] + right_sign * x * px;
+                position[1] = board.center[1] + y * px;
+                position[board.normal_axis] = plane;
+                positions[corner] = position;
                 uv[corner] = *texture;
             }
             quads.push(TextQuad {
@@ -354,8 +390,7 @@ pub(super) fn quads(
                 // Vanilla fakes bold by drawing the glyph again one pixel over.
                 let mut shifted = positions;
                 for position in &mut shifted {
-                    position[0] += right[0] * px;
-                    position[2] += right[2] * px;
+                    position[perp] += right_sign * px;
                 }
                 quads.push(TextQuad {
                     positions: shifted,
@@ -372,19 +407,18 @@ pub(super) fn quads(
 /// The board's `right` and outward `out` unit vectors for a facing and side.
 fn board_frame(yaw: u8, mirrored: bool) -> ([f32; 3], [f32; 3]) {
     // A standing sign's front points along its rotation: 0 = +Z, 1 = +X, ...
-    let out = match yaw % 4 {
+    let mut out = match yaw % 4 {
         1 => [1.0, 0.0, 0.0],
         2 => [0.0, 0.0, -1.0],
         3 => [-1.0, 0.0, 0.0],
         _ => [0.0, 0.0, 1.0],
     };
-    // `right` is the reader's right seen from outside the face: for a front
-    // pointing along `out`, that is `out x up`. The back side mirrors it and so
-    // reads the other way round.
-    let mut right = [out[2], 0.0, -out[0]];
+    // The back side is read from behind, so it faces the opposite way and runs
+    // the other way round; `right` follows the flipped normal.
     if mirrored {
-        right = [-right[0], 0.0, -right[2]];
+        out = [-out[0], 0.0, -out[2]];
     }
+    let right = [out[2], 0.0, -out[0]];
     (right, out)
 }
 
@@ -446,4 +480,139 @@ fn format_color(code: char) -> Option<[f32; 3]> {
         'f' => [1.0, 1.0, 1.0],
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state(name: &str, key: &str, value: &str) -> nucleation::BlockState {
+        let mut state = nucleation::BlockState::new(name);
+        state.set_property(key, value);
+        state
+    }
+
+    #[test]
+    fn yaw_matches_the_blocks_own_orientation() {
+        // Standing signs number their rotations counter-clockwise from south.
+        assert_eq!(state_yaw(&state("minecraft:oak_sign", "rotation", "0")), 0);
+        assert_eq!(state_yaw(&state("minecraft:oak_sign", "rotation", "4")), 3);
+        assert_eq!(state_yaw(&state("minecraft:oak_sign", "rotation", "8")), 2);
+        assert_eq!(state_yaw(&state("minecraft:oak_sign", "rotation", "12")), 1);
+        assert_eq!(state_yaw(&state("minecraft:oak_sign", "rotation", "15")), 1);
+        // Wall signs store the direction they face outright; the user's real
+        // schematics are almost all `facing=south`.
+        assert_eq!(state_yaw(&state("minecraft:oak_wall_sign", "facing", "south")), 0);
+        assert_eq!(state_yaw(&state("minecraft:oak_wall_sign", "facing", "east")), 1);
+        assert_eq!(state_yaw(&state("minecraft:oak_wall_sign", "facing", "north")), 2);
+        assert_eq!(state_yaw(&state("minecraft:oak_wall_sign", "facing", "west")), 3);
+    }
+
+    fn cells() -> HashMap<char, Cell> {
+        HashMap::from([(
+            'A',
+            Cell {
+                u0: 0.0,
+                v0: 0.0,
+                u1: 1.0,
+                v1: 1.0,
+                ink_width: 6.0,
+                ink_height: 8.0,
+                advance: 6.0,
+                cell_height: 8.0,
+            },
+        )])
+    }
+
+    fn first_line(text: &str) -> Side {
+        Side {
+            lines: vec![text.to_string(), String::new(), String::new(), String::new()],
+            color: [0.0, 0.0, 0.0],
+            glowing: false,
+        }
+    }
+
+    /// A south-facing board: thin along z, spanning x ±0.5.
+    fn board() -> Board {
+        Board {
+            center: [0.0, 0.0, 0.0],
+            normal_axis: 2,
+            low: -0.04,
+            high: 0.04,
+            half_height: 0.25,
+        }
+    }
+
+    /// An east-facing board like a wall sign: thin along x, flush with +x.
+    fn east_board() -> Board {
+        Board {
+            center: [0.0, 0.0, 0.0],
+            normal_axis: 0,
+            low: 0.4,
+            high: 0.48,
+            half_height: 0.25,
+        }
+    }
+
+    #[test]
+    fn text_lands_on_the_face_the_sign_faces() {
+        // yaw 0 = +Z, 1 = +X, 2 = -Z, 3 = -X.
+        for (yaw, axis, sign) in [(0u8, 2usize, 1.0f32), (2, 2, -1.0)] {
+            let quads = quads(&cells(), &first_line("A"), yaw, false, board(), 0.01);
+            assert!(!quads.is_empty(), "yaw {yaw} produced no text");
+            for quad in &quads {
+                for position in &quad.positions {
+                    assert!(
+                        position[axis] * sign > 0.0,
+                        "yaw {yaw}: {position:?} is not on the front face"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn east_and_west_text_sits_on_their_board_face() {
+        // The wall-sign board is flush with one side of the block; text must be
+        // written just outside that face, not half a block away.
+        for (yaw, expected) in [(1u8, 0.485f32), (3, 0.395)] {
+            let quads = quads(&cells(), &first_line("A"), yaw, false, east_board(), 0.01);
+            assert!(!quads.is_empty(), "yaw {yaw} produced no text");
+            for quad in &quads {
+                for position in &quad.positions {
+                    assert!(
+                        (position[0] - expected).abs() < 1e-3,
+                        "yaw {yaw}: {position:?} is not on the board face"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn back_text_sits_on_the_opposite_face() {
+        for (yaw, axis, sign) in [(0u8, 2usize, -1.0f32), (2, 2, 1.0)] {
+            let quads = quads(&cells(), &first_line("A"), yaw, true, board(), 0.01);
+            assert!(!quads.is_empty(), "yaw {yaw} produced no back text");
+            for quad in &quads {
+                for position in &quad.positions {
+                    assert!(
+                        position[axis] * sign > 0.0,
+                        "yaw {yaw}: back text {position:?} is on the front side"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn formatting_codes_colour_a_line_and_setting_them_off_restores_the_dye() {
+        let ink = |text: &str| {
+            let side = first_line(text);
+            layout_line(&cells(), text, side.ink())[0].ink
+        };
+        assert_eq!(ink("A"), [0.0, 0.0, 0.0]);
+        assert_eq!(ink("§cA"), [1.0, 0.33, 0.33]);
+        assert_eq!(ink("§c§rA"), [0.0, 0.0, 0.0]);
+    }
 }
