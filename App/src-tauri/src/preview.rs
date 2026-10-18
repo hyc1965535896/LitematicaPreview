@@ -1163,6 +1163,7 @@ pub(crate) fn export_to_file(
     litematica_preview_native::validate_replacements(replacements)?;
     let data = read_file(path, &|| Ok(()))?;
     let mut container_item_count = 0usize;
+    let mut repaired_regions = 0i64;
     let (exported_data, replaced, block_count) = if format == "materials" {
         let file_name = path
             .file_name()
@@ -1177,6 +1178,7 @@ pub(crate) fn export_to_file(
             .ok_or_else(|| format!("不受支持的导出格式：{format}"))?;
         let exported =
             litematica_preview_native::export_schematic(&data, replacements, export_format)?;
+        repaired_regions = exported.repaired_regions;
         (exported.data, exported.replaced, exported.block_count)
     };
     if let Some(parent) = destination.parent() {
@@ -1194,6 +1196,7 @@ pub(crate) fn export_to_file(
         materials: Vec::new(),
         replaced,
         container_item_count: container_item_count as i64,
+        repaired_regions,
     })
 }
 
