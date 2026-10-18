@@ -47,6 +47,9 @@ pub struct LoadedPreview {
     /// Distinct item ids inside containers; only the material-list export
     /// fills this in, previews leave it at zero.
     pub container_item_count: i64,
+    /// Regions whose absolute world origin was rewritten during export;
+    /// previews leave it at zero.
+    pub repaired_regions: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -269,6 +272,7 @@ pub fn load_chunks_with_fonts(
         materials,
         replaced,
         container_item_count: 0,
+        repaired_regions: 0,
     })
 }
 
