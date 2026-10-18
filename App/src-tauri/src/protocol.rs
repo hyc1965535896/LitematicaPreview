@@ -109,6 +109,9 @@ pub struct Summary {
     pub materials: Vec<MaterialRecord>,
     #[serde(default)]
     pub replaced: i64,
+    /// Regions whose absolute origin was rewritten by an export.
+    #[serde(default)]
+    pub repaired_regions: i64,
     /// Distinct items inside containers; only material-list exports fill it.
     #[serde(default)]
     pub container_item_count: i64,
@@ -423,6 +426,7 @@ impl<'a, S: Read + Write> Encoder<'a, S> {
                 max: preview.info.max,
                 materials: Vec::new(),
                 replaced: 0,
+                repaired_regions: 0,
                 container_item_count: 0,
             },
         )
@@ -470,6 +474,7 @@ pub fn finish(stream: &mut impl Write, result: Result<LoadedPreview, String>) ->
                     })
                     .collect(),
                 replaced: loaded.replaced,
+                repaired_regions: loaded.repaired_regions,
                 container_item_count: loaded.container_item_count,
             };
             write_packet(
@@ -995,6 +1000,7 @@ pub(crate) mod tests {
                 },
                 materials: Vec::new(),
                 replaced: 0,
+                repaired_regions: 0,
                 container_item_count: 0,
             }),
         )
@@ -1501,6 +1507,7 @@ pub(crate) mod tests {
                 materials: Vec::new(),
                 replaced: 0,
                 container_item_count: 0,
+                repaired_regions: 0,
             }),
         )
         .unwrap();
