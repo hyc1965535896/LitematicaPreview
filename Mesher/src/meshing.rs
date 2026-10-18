@@ -723,6 +723,21 @@ fn block_state_to_input_block(state: &BlockState) -> InputBlock {
             input.properties.insert("facing".into(), facing.into());
         }
     }
+    // schematic-mesher 0.2.0 mounts north- and south-facing wall signs on the
+    // wrong edge: the board ends up a block away from its wall instead of flush
+    // against it (east and west are already right). The sign still faces the
+    // same way, so swapping just the two north/south labels moves the board
+    // against the wall without moving the text.
+    if name.ends_with("wall_sign") || name.ends_with("wall_hanging_sign") {
+        let mirrored = match input.properties.get("facing").map(String::as_str) {
+            Some("north") => Some("south"),
+            Some("south") => Some("north"),
+            _ => None,
+        };
+        if let Some(facing) = mirrored {
+            input.properties.insert("facing".into(), facing.into());
+        }
+    }
     input
 }
 
