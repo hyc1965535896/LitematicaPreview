@@ -65,6 +65,98 @@ pub struct ExportedSchematic {
     pub data: Vec<u8>,
     pub replaced: i64,
     pub block_count: i64,
+    /// Regions whose absolute world origin was rewritten as a relative offset.
+    pub repaired_regions: i64,
+}
+
+/// A region saved from an in-world selection can carry the absolute world
+/// position instead of an offset from the schematic's own origin. Litematica
+/// places blocks at `paste origin + Position + local`, so such a file lands
+/// thousands of blocks away from where it was pasted and looks like nothing was
+/// placed. Small offsets are legitimate sub-region placement and stay put; a
+/// position this far from the origin cannot be one.
+const ABSOLUTE_ORIGIN_LIMIT: i32 = 1024;
+
+/// Rewrites plainly absolute region origins in a serialized litematic as
+/// offsets from the schematic's own minimum corner. Returns how many regions
+/// moved. Works on the written NBT because the writer re-derives each origin
+/// from the region's tight content bounds, not from `Region.position`.
+fn repair_serialized_origins(data: Vec<u8>) -> Result<(Vec<u8>, i64), String> {
+    let mut cursor = std::io::Cursor::new(&data);
+    let Ok((mut root, _)) =
+        quartz_nbt::io::read_nbt(&mut cursor, quartz_nbt::io::Flavor::GzCompressed)
+    else {
+        return Ok((data, 0));
+    };
+    let mut positions: Vec<(i32, i32, i32)> = Vec::new();
+    if let Ok(regions) = root.get::<_, &NbtCompound>("Regions") {
+        for (_, region) in regions.inner() {
+            let NbtTag::Compound(region) = region else {
+                continue;
+            };
+            let Ok(pos) = region.get::<_, &NbtCompound>("Position") else {
+                continue;
+            };
+            let (Ok(x), Ok(y), Ok(z)) = (
+                pos.get::<_, i32>("x"),
+                pos.get::<_, i32>("y"),
+                pos.get::<_, i32>("z"),
+            ) else {
+                continue;
+            };
+            positions.push((x, y, z));
+        }
+    }
+    let absolute = positions.iter().any(|(x, y, z)| {
+        x.abs() > ABSOLUTE_ORIGIN_LIMIT
+            || y.abs() > ABSOLUTE_ORIGIN_LIMIT
+            || z.abs() > ABSOLUTE_ORIGIN_LIMIT
+    });
+    if !absolute || positions.is_empty() {
+        return Ok((data, 0));
+    }
+    // Shift the whole schematic, not each region on its own: the offsets between
+    // regions are real geometry, even when every region also carries the world
+    // origin baked into its position.
+    let mut min = (i32::MAX, i32::MAX, i32::MAX);
+    for (x, y, z) in &positions {
+        min.0 = min.0.min(*x);
+        min.1 = min.1.min(*y);
+        min.2 = min.2.min(*z);
+    }
+    let mut repaired = 0;
+    if let Ok(regions) = root.get_mut::<_, &mut NbtCompound>("Regions") {
+        for (_, region) in regions.inner_mut() {
+            let NbtTag::Compound(region) = region else {
+                continue;
+            };
+            let Ok(pos) = region.get_mut::<_, &mut NbtCompound>("Position") else {
+                continue;
+            };
+            let (Ok(x), Ok(y), Ok(z)) = (
+                pos.get::<_, i32>("x"),
+                pos.get::<_, i32>("y"),
+                pos.get::<_, i32>("z"),
+            ) else {
+                continue;
+            };
+            let shifted = (x - min.0, y - min.1, z - min.2);
+            if shifted == (x, y, z) {
+                continue;
+            }
+            pos.insert("x", NbtTag::Int(shifted.0));
+            pos.insert("y", NbtTag::Int(shifted.1));
+            pos.insert("z", NbtTag::Int(shifted.2));
+            repaired += 1;
+        }
+    }
+    if repaired == 0 {
+        return Ok((data, 0));
+    }
+    let mut out = Vec::new();
+    quartz_nbt::io::write_nbt(&mut out, None, &root, quartz_nbt::io::Flavor::GzCompressed)
+        .map_err(|error| format!("无法写入修正后的区域坐标：{error}"))?;
+    Ok((out, repaired))
 }
 
 /// Decode, apply material replacements, and serialize to the target format.
@@ -95,11 +187,22 @@ pub fn export_schematic(
         ExportFormat::Snapshot => snapshot::to_snapshot(&schematic).map_err(|e| e.to_string()),
         ExportFormat::StructureNbt => write_vanilla_structure(&schematic),
     };
-    result.map(|data| ExportedSchematic {
+    // Files saved from a world selection sometimes carry absolute coordinates
+    // in `Region.Position`; placed in game they land thousands of blocks away.
+    // Litematica's own format is the one that places blocks, so that output is
+    // rewritten to relative origins; the structure formats below have a single
+    // origin and are already relative.
+    let (data, repaired_regions) = match (result, format) {
+        (Ok(data), ExportFormat::Litematic) => repair_serialized_origins(data)?,
+        (Ok(data), _) => (data, 0),
+        (Err(error), _) => return Err(format!("无法写入{}文件：{error}", format.label())),
+    };
+    Ok(ExportedSchematic {
         data,
         replaced,
         block_count: schematic.total_blocks() as i64,
-    }).map_err(|error| format!("无法写入{}文件：{error}", format.label()))
+        repaired_regions,
+    })
 }
 
 /// Serialize to the vanilla structure block binary format. Structure files
