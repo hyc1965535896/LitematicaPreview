@@ -311,6 +311,9 @@ struct ExportOutcome {
     block_count: i64,
     #[serde(default)]
     container_item_count: i64,
+    /// Regions whose absolute origin an export rewrote; 0 for material lists.
+    #[serde(default)]
+    repaired_regions: i64,
 }
 
 #[tauri::command]
@@ -365,6 +368,7 @@ async fn export_schematic(
         replaced: summary.replaced,
         block_count: summary.block_count,
         container_item_count: 0,
+        repaired_regions: summary.repaired_regions,
     })
 }
 
@@ -416,6 +420,7 @@ async fn export_materials(
         replaced: summary.replaced,
         block_count: summary.block_count,
         container_item_count: summary.container_item_count,
+        repaired_regions: 0,
     })
 }
 
